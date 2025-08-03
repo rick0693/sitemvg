@@ -1,0 +1,1355 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Roteirizador Web</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Supabase Client JS -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <!-- jsPDF para exportação em PDF -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+    <!-- SheetJS (xlsx) para exportação em Excel -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <!-- QR Code Generator -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
+    <!-- Google Maps JavaScript API (Chave de API necessária para roteirização) -->
+    <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBBLM5OcS_gLh7okPCtBoDi9VDYygVSLqE" async defer></script>
+    <style>
+        :root {
+            --bg-primary: #111827; /* gray-900 */
+            --bg-secondary: #1f2937; /* gray-800 */
+            --bg-tertiary: #374151; /* gray-700 */
+            --bg-hover: #4b5563; /* gray-600 */
+            --text-primary: #f9fafb; /* gray-50 */
+            --text-secondary: #d1d5db; /* gray-300 */
+            --border-color: #4b5563; /* gray-600 */
+            --accent-blue: #3b82f6;
+            --accent-green: #22c55e;
+            --accent-red: #ef4444;
+            --row-highlight: rgba(34, 197, 94, 0.15); 
+        }
+
+        .light-theme {
+            --bg-primary: #f3f4f6; /* gray-100 */
+            --bg-secondary: #ffffff;
+            --bg-tertiary: #e5e7eb; /* gray-200 */
+            --bg-hover: #d1d5db; /* gray-300 */
+            --text-primary: #1f2937; /* gray-800 */
+            --text-secondary: #4b5563; /* gray-600 */
+            --border-color: #d1d5db; /* gray-300 */
+            --accent-blue: #2563eb;
+            /* Verde mais escuro para melhor contraste no tema claro */
+            --row-highlight: rgba(22, 163, 74, 0.15); 
+        }
+        
+        /* Ajuste para remover barra de rolagem da página */
+        html, body {
+            height: 100%;
+            overflow: hidden; /* Impede a rolagem no nível do body */
+        }
+
+        body { 
+            background-color: var(--bg-primary); 
+            color: var(--text-primary); 
+            font-family: 'Inter', sans-serif; 
+            transition: background-color 0.3s, color 0.3s;
+        }
+        
+        /* Container principal da aplicação com rolagem interna */
+        #app {
+            height: 100vh;
+            overflow-y: auto; /* Permite a rolagem apenas dentro do app */
+        }
+
+        .bg-app-secondary { background-color: var(--bg-secondary); }
+        .border-app { border-color: var(--border-color); }
+
+        .btn-primary { background-color: var(--accent-blue); color: white; }
+        .btn-primary:hover { opacity: 0.9; transform: translateY(-1px); }
+        .btn-secondary { background-color: var(--accent-green); color: white; }
+        .btn-secondary:hover { opacity: 0.9; transform: translateY(-1px); }
+        .btn-danger { background-color: var(--accent-red); color: white; }
+        .btn-danger:hover { opacity: 0.9; transform: translateY(-1px); }
+        
+        input, select { 
+            background-color: var(--bg-tertiary); 
+            color: var(--text-primary); 
+            border: 1px solid var(--border-color); 
+        }
+        
+        table {
+            border-collapse: separate;
+            border-spacing: 0;
+        }
+
+        /* Congela o cabeçalho da tabela */
+        table thead th { 
+            background-color: var(--bg-tertiary); 
+            position: sticky; 
+            top: 0; 
+            z-index: 10;
+        }
+        table thead th:hover { background-color: var(--bg-hover); }
+        table tbody tr { transition: background-color 0.2s ease-in-out; }
+        table tbody tr:hover { background-color: var(--bg-hover); }
+        
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+        .header-loader { 
+            border: 3px solid var(--bg-tertiary); 
+            border-top: 3px solid var(--accent-blue); 
+            border-radius: 50%; 
+            width: 24px; 
+            height: 24px; 
+            animation: spin 1s linear infinite; 
+        }
+
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .fade-in { animation: fadeIn 0.5s ease-out forwards; }
+
+        .multi-select-container { position: relative; background-color: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 0.5rem; display: flex; align-items: center; min-height: 42px; overflow: hidden; }
+        .multi-select-tags { display: flex; flex-shrink: 1; overflow-x: auto; gap: 0.25rem; padding: 0.25rem; }
+        .multi-select-tag { background-color: var(--accent-blue); color: white; padding: 0.25rem 0.5rem; border-radius: 0.375rem; display: flex; align-items: center; font-size: 0.875rem; white-space: nowrap; }
+        .multi-select-tag-remove { margin-left: 0.5rem; cursor: pointer; font-weight: bold; }
+        .multi-select-input { flex-grow: 1; background-color: transparent; border: none; outline: none; padding: 0.5rem; color: var(--text-primary); min-width: 120px; }
+        .multi-select-dropdown { display: none; position: absolute; top: 100%; left: 0; right: 0; background-color: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 0.5rem; margin-top: 0.25rem; max-height: 200px; overflow-y: auto; z-index: 50; }
+        .multi-select-option { padding: 0.5rem 1rem; cursor: pointer; }
+        .multi-select-option:hover { background-color: var(--bg-hover); }
+
+        #notification-icon { position: relative; cursor: pointer; }
+        #notification-badge { position: absolute; top: -5px; right: -5px; background-color: var(--accent-red); color: white; border-radius: 50%; width: 20px; height: 20px; font-size: 12px; display: flex; align-items: center; justify-content: center; }
+        #notification-panel { display: none; position: absolute; top: 60px; right: 20px; width: 300px; background-color: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 0.5rem; box-shadow: 0 4px 6px rgba(0,0,0,0.1); z-index: 100; }
+        #theme-toggle-btn .icon { transition: transform 0.3s ease-in-out; }
+
+        /* Abas fixas */
+        #tabs-container {
+            position: sticky;
+            top: 0;
+            z-index: 20; /* Garante que fique sobre o conteúdo da tabela */
+            background-color: var(--bg-primary); /* Fundo para não ficar transparente */
+        }
+
+        .tab-button {
+            padding: 0.5rem 1rem;
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            transition: all 0.2s;
+        }
+        .tab-button.active {
+            color: var(--accent-blue);
+            border-bottom-color: var(--accent-blue);
+        }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+
+        #summary-content table,
+        #details-content table {
+            table-layout: fixed;
+            width: 100%;
+        }
+
+        #summary-content th, #summary-content td,
+        #details-content th, #details-content td {
+            white-space: nowrap;
+            padding: 0.75rem 0.5rem; /* Aumenta o padding para melhor visualização */
+            overflow: hidden;
+            text-overflow: ellipsis;
+            vertical-align: middle;
+        }
+        
+        .roteirizado-row {
+            background-color: var(--row-highlight);
+        }
+
+        .col-align-right { text-align: right; }
+        .col-align-center { text-align: center; }
+
+        .sortable { cursor: pointer; user-select: none; }
+        .sort-icon { display: inline-block; width: 1em; height: 1em; margin-left: 4px; vertical-align: middle; opacity: 0.5; transition: opacity 0.2s; }
+        .sortable:hover .sort-icon { opacity: 1; }
+        .sortable.asc .sort-icon, .sortable.desc .sort-icon { opacity: 1; }
+        .section-header { cursor: pointer; }
+
+        .resizable-th { position: relative; }
+        .resizer { position: absolute; top: 0; right: -2px; width: 5px; cursor: col-resize; user-select: none; height: 100%; z-index: 20; }
+        .resizer:hover, .resizing { background-color: var(--accent-blue); }
+    </style>
+</head>
+<body class="transition-colors duration-300">
+    <div id="app" class="flex flex-col max-w-full mx-auto p-4 gap-4">
+        <header class="flex justify-between items-center mb-2 flex-shrink-0">
+            <div class="flex items-center gap-4">
+                <img src="https://rodomais.com.br/imagens/logo_topo.png" alt="Logo Rodomais" class="h-10">
+                <h1 class="text-3xl font-bold">Roteirizador Web</h1>
+            </div>
+            <div class="flex items-center gap-4">
+                <div id="header-loader" class="header-loader hidden"></div>
+                <button id="theme-toggle-btn" class="p-2 rounded-full hover:bg-app-secondary">
+                    <svg id="theme-icon-sun" xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 icon" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
+                    <svg id="theme-icon-moon" xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 icon hidden" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" /></svg>
+                </button>
+                <div id="notification-icon">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" /></svg>
+                    <div id="notification-badge" class="hidden">0</div>
+                </div>
+            </div>
+        </header>
+
+        <div id="notification-panel" class="p-4 rounded-lg shadow-lg bg-app-secondary">
+            <h3 class="font-bold mb-2">Notificações</h3>
+            <div id="notification-list" class="text-sm space-y-2 max-h-64 overflow-y-auto"></div>
+        </div>
+        
+        <!-- Seção de Filtros -->
+        <div class="bg-app-secondary p-4 rounded-lg flex-shrink-0">
+            <div class="mb-4">
+                <label for="origin-select" class="block text-sm font-medium mb-1">Ponto de Origem</label>
+                <select id="origin-select" class="w-full p-2 rounded-lg"></select>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4 items-end">
+                <div>
+                    <label for="uf-filter-container" class="block text-sm font-medium mb-1">UF</label>
+                    <div id="uf-filter-container"></div>
+                </div>
+                <div>
+                    <label for="cidade-filter-container" class="block text-sm font-medium mb-1">Cidade</label>
+                    <div id="cidade-filter-container"></div>
+                </div>
+                <div>
+                    <label for="rota-filter-container" class="block text-sm font-medium mb-1">Rota</label>
+                    <div id="rota-filter-container"></div>
+                </div>
+                <div>
+                    <label for="data-min-filter" class="block text-sm font-medium mb-1">Data Início</label>
+                    <input type="date" id="data-min-filter" class="w-full p-2 rounded-lg">
+                </div>
+                <div>
+                    <label for="data-max-filter" class="block text-sm font-medium mb-1">Data Fim</label>
+                    <input type="date" id="data-max-filter" class="w-full p-2 rounded-lg">
+                </div>
+                <button id="filter-btn" class="btn-primary rounded-lg px-6 py-2 w-full lg:w-auto transition h-10">Filtrar</button>
+            </div>
+        </div>
+
+        <!-- Container das Abas e Tabelas -->
+        <div id="results-container" class="flex flex-col gap-4 flex-grow min-h-0">
+            <div class="flex border-b border-app flex-shrink-0" id="tabs-container">
+                <button id="summary-tab-btn" class="tab-button active">Resumo por Rota</button>
+                <button id="details-tab-btn" class="tab-button">Dados Detalhados</button>
+            </div>
+            <div id="summary-section" class="tab-content active flex-grow overflow-y-auto"></div>
+            <div id="details-section" class="tab-content flex-grow overflow-y-auto"></div>
+        </div>
+    </div>
+    <script type="module">
+        // --- CONFIGURAÇÃO ---
+        const SUPABASE_URL = "https://glyhzstmzwniflatcjra.supabase.co";
+        const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdseWh6c3RtenduaWZsYXRjanJhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDYxMjU5NTMsImV4cCI6MjA2MTcwMTk1M30.Ggj_d_ysVv6WmBWKItz-vBFbZpoWfFWRm020v3Rk9HU";
+        
+        const GOOGLE_API_KEY = "AIzaSyBBLM5OcS_gLh7okPCtBoDi9VDYygVSLqE"; 
+        const MAX_WAYPOINTS = 23;
+        
+        const ORIGINS = {
+            "VIANA-ES": "Avenida Amazonas,s/nº Arlindo A Villaschi - Viana - ES",
+            "MURIAE-MG": "Rua Ramo A1, nº 1750, Distrito Industrial, Muriaé - MG",
+            "BELOHORIZONTE-MG": "Rua Algarve, N° 700, São Francisco, Belo Horizonte - MG"
+        };
+        
+        const ORIGIN_DETAILS = {
+            "VIANA-ES": {
+                name: "Filial Viana",
+                address: "Avenida Amazonas,s/nº Arlindo A Villaschi - Viana - ES",
+                cep: "29.136-308",
+                phones: ["(027) 3012-5102", "(027) 3012-5103"],
+                email: "filiales@rodomais.com.br"
+            },
+            "MURIAE-MG": {
+                name: "Matriz MG",
+                address: "Rua Ramo A1, nº 1750, Distrito Industrial, Muriaé - MG",
+                cep: "36.880-000",
+                phones: ["(032) 3721 6741", "3722-4615", "3722-2540"],
+                email: "operacional@rodomais.com.br"
+            },
+            "BELOHORIZONTE-MG": {
+                name: "Filial Belo Horizonte",
+                address: "Rua Algarve, N° 700, São Francisco, Belo Horizonte - MG",
+                cep: "31255-190",
+                phones: ["(31) 3492-7723", "3495-3418", "3495-3424"],
+                email: "filialbh@rodomais.com.br"
+            }
+        };
+
+        const { createClient } = supabase;
+        const supabaseClient = createClient(SUPABASE_URL, SUPABASE_KEY);
+        
+        // --- ESTADO DA APLICAÇÃO ---
+        let filteredData = [];
+        let selectedRoutes = [];
+        let selectedDeliveries = new Set();
+        let orderedData = null;
+        let multiSelectInstances = {};
+        let notifications = [];
+        let unreadNotifications = 0;
+        let summarySort = { column: 'name', direction: 'asc' };
+        let detailsSort = { column: null, direction: 'asc' };
+        let currentMapsUrl = '';
+        
+        // --- ELEMENTOS DO DOM ---
+        const headerLoader = document.getElementById('header-loader');
+        const summarySection = document.getElementById('summary-section');
+        const detailsSection = document.getElementById('details-section');
+        const filterBtn = document.getElementById('filter-btn');
+        const notificationIcon = document.getElementById('notification-icon');
+        const notificationPanel = document.getElementById('notification-panel');
+        const notificationBadge = document.getElementById('notification-badge');
+        const notificationList = document.getElementById('notification-list');
+        const themeToggleBtn = document.getElementById('theme-toggle-btn');
+        const sunIcon = document.getElementById('theme-icon-sun');
+        const moonIcon = document.getElementById('theme-icon-moon');
+        const originSelect = document.getElementById('origin-select');
+        const summaryTabBtn = document.getElementById('summary-tab-btn');
+        const detailsTabBtn = document.getElementById('details-tab-btn');
+
+        // --- LÓGICA DE TEMA ---
+        const applyTheme = (theme) => {
+            if (theme === 'light') {
+                document.body.classList.add('light-theme');
+                sunIcon.classList.add('hidden');
+                moonIcon.classList.remove('hidden');
+            } else {
+                document.body.classList.remove('light-theme');
+                sunIcon.classList.remove('hidden');
+                moonIcon.classList.add('hidden');
+            }
+        };
+
+        themeToggleBtn.addEventListener('click', () => {
+            const isLight = document.body.classList.contains('light-theme');
+            const newTheme = isLight ? 'dark' : 'light';
+            localStorage.setItem('theme', newTheme);
+            applyTheme(newTheme);
+        });
+        
+        // --- FUNÇÕES DE NOTIFICAÇÃO ---
+        const addNotification = (text, type = 'info') => {
+            const now = new Date();
+            const timeString = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+            notifications.unshift({ text, time: timeString, type });
+            unreadNotifications++;
+            renderNotifications();
+        };
+        const renderNotifications = () => {
+            notificationList.innerHTML = notifications.map(n => `<div class="p-2 bg-app-tertiary rounded-md"><strong>${n.time}</strong> - ${n.text}</div>`).join('');
+            if (unreadNotifications > 0) {
+                notificationBadge.textContent = unreadNotifications;
+                notificationBadge.classList.remove('hidden');
+            } else {
+                notificationBadge.classList.add('hidden');
+            }
+        };
+        notificationIcon.addEventListener('click', () => {
+            notificationPanel.style.display = notificationPanel.style.display === 'block' ? 'none' : 'block';
+            if (notificationPanel.style.display === 'block') {
+                unreadNotifications = 0;
+                renderNotifications();
+            }
+        });
+
+        // --- FUNÇÕES AUXILIARES ---
+        const normalizeRouteName = (name) => !name ? 'ROTA DESCONHECIDA' : String(name).replace(/-/g, ' ').replace(/\s+/g, ' ').trim().toUpperCase() || 'ROTA DESCONHECIDA';
+        const normalizeCep = (cep) => !cep ? null : String(cep).replace(/\D/g, '').padStart(8, '0');
+        
+        // --- LÓGICA DE DADOS ---
+        async function fetchFilteredData(filters) {
+            const PAGE_SIZE = 1000;
+            let allRows = [];
+            let page = 0;
+            let hasMore = true;
+            const columns = "CTRC_Identificador, Destino_UF, Destino_Cidade, Entrega_Bairro, Entrega_CEP, Tipo_Operação, Código_Situação, Descrição_Situação, Unidade_Emissor, Emissão_Data_Hora, Previsão_Entrega, Valor_Frete_RRS, Valor_Nota_Fiscal_RRS, Peso_Cálculo_Kg, Quantidade_Volumes, Entrega_Nome, Remetente_Nome, rota, situacao_resumida, Estado_Rota";
+
+            const excludedCodSit = ['1-ENTREGUE', '36-MERCADORIA', '93-CTRC', '99-CTRC', '5-DEST', '7-CANCELAMENTO', '37-ENTREGA', '14-MERCADORIA', '50-FALTA', '94-CTRC'];
+            const excludedSituacaoResumida = ['ENTREGA FINALIZADA', 'EM ROTA DE ENTREGA', 'Parceiro Speed', 'COMPLEMENTAR'];
+            const tables = ["ctrc_data_vna", "ctrc_data_bhz", "ctrc_data_mre", "ctrc_data_spa"];
+
+            for (const tableName of tables) {
+                page = 0;
+                hasMore = true;
+                while (hasMore) {
+                    let query = supabaseClient
+                        .from(tableName)
+                        .select(columns)
+                        .not('Código_Situação', 'in', `(${excludedCodSit.join(',')})`)
+                        .not('situacao_resumida', 'in', `(${excludedSituacaoResumida.join(',')})`)
+                        .gte('Emissão_Data_Hora', filters.dataMin)
+                        .lte('Emissão_Data_Hora', filters.dataMax)
+                        .order('CTRC_Identificador', { ascending: true })
+                        .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
+
+                    if (filters.ufs.length > 0) query = query.in('Destino_UF', filters.ufs);
+                    if (filters.cidades.length > 0) query = query.in('Destino_Cidade', filters.cidades);
+                    if (filters.rotas.length > 0) query = query.in('rota', filters.rotas);
+
+                    const { data, error } = await query;
+
+                    if (error) {
+                        console.error(`Erro ao carregar a tabela ${tableName}:`, error);
+                        throw new Error(`Erro ao carregar a tabela ${tableName}: ${error.message}`);
+                    }
+
+                    if (data && data.length > 0) {
+                        allRows.push(...data.map(d => ({...d, sourceTable: tableName })));
+                        hasMore = data.length === PAGE_SIZE;
+                        page++;
+                    } else {
+                        hasMore = false;
+                    }
+                }
+            }
+            return allRows;
+        }
+
+        // --- LÓGICA DOS FILTROS ---
+        function createMultiSelect(containerId, options, placeholder) {
+            const container = document.getElementById(containerId);
+            container.innerHTML = '';
+            container.className = 'multi-select-container';
+            let selected = [];
+
+            const tagsContainer = document.createElement('div');
+            tagsContainer.className = 'multi-select-tags';
+            
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.className = 'multi-select-input';
+            input.placeholder = placeholder;
+
+            const dropdown = document.createElement('div');
+            dropdown.className = 'multi-select-dropdown';
+
+            container.append(tagsContainer, input);
+            container.parentElement.style.position = 'relative'; 
+            container.parentElement.appendChild(dropdown);
+
+            function render() {
+                tagsContainer.innerHTML = '';
+                selected.forEach(value => {
+                    const tag = document.createElement('span');
+                    tag.className = 'multi-select-tag';
+                    tag.textContent = value;
+                    const removeBtn = document.createElement('span');
+                    removeBtn.className = 'multi-select-tag-remove';
+                    removeBtn.textContent = '×';
+                    removeBtn.onclick = (e) => {
+                        e.stopPropagation();
+                        selected = selected.filter(v => v !== value);
+                        render();
+                    };
+                    tag.appendChild(removeBtn);
+                    tagsContainer.appendChild(tag);
+                });
+
+                dropdown.innerHTML = '';
+                const filterText = input.value.toLowerCase();
+                options
+                    .filter(opt => !selected.includes(opt) && String(opt).toLowerCase().includes(filterText))
+                    .forEach(opt => {
+                        const optionEl = document.createElement('div');
+                        optionEl.className = 'multi-select-option';
+                        optionEl.textContent = opt;
+                        optionEl.onclick = () => {
+                            selected.push(opt);
+                            input.value = '';
+                            render();
+                            dropdown.style.display = 'none';
+                            input.focus();
+                        };
+                        dropdown.appendChild(optionEl);
+                    });
+            }
+
+            input.addEventListener('keyup', render);
+            input.addEventListener('focus', () => {
+                render();
+                dropdown.style.display = 'block';
+            });
+            container.addEventListener('click', () => input.focus());
+            
+            document.addEventListener('click', (e) => {
+                if (!container.contains(e.target) && !dropdown.contains(e.target)) {
+                    dropdown.style.display = 'none';
+                }
+            });
+            
+            render();
+
+            return { getSelected: () => selected };
+        }
+
+
+        async function fetchDistinctValues(column) {
+            const tables = ["ctrc_data_vna", "ctrc_data_bhz", "ctrc_data_mre", "ctrc_data_spa"];
+            let allValues = new Set();
+
+            for (const table of tables) {
+                const { data, error } = await supabaseClient.from(table).select(column);
+                if (error) {
+                    console.error(`Erro ao buscar valores distintos de ${column} em ${table}:`, error);
+                    continue;
+                }
+                if (data) {
+                    data.forEach(item => {
+                        if (item[column]) {
+                            const value = column === 'rota' ? normalizeRouteName(item[column]) : item[column];
+                            allValues.add(value);
+                        }
+                    });
+                }
+            }
+            return [...allValues].sort();
+        }
+
+        async function populateFilters() {
+            headerLoader.classList.remove('hidden');
+            filterBtn.disabled = true;
+            filterBtn.classList.add('opacity-50', 'cursor-not-allowed');
+
+            try {
+                const [ufs, cidades, rotas] = await Promise.all([
+                    fetchDistinctValues('Destino_UF'),
+                    fetchDistinctValues('Destino_Cidade'),
+                    fetchDistinctValues('rota')
+                ]);
+
+                multiSelectInstances['uf'] = createMultiSelect('uf-filter-container', ufs, 'Selecione UFs...');
+                multiSelectInstances['cidade'] = createMultiSelect('cidade-filter-container', cidades, 'Selecione Cidades...');
+                multiSelectInstances['rota'] = createMultiSelect('rota-filter-container', rotas, 'Selecione Rotas...');
+                
+                addNotification("Filtros prontos para uso.");
+            } catch (error) {
+                addNotification(`Erro ao carregar filtros: ${error.message}`, 'error');
+            } finally {
+                headerLoader.classList.add('hidden');
+                filterBtn.disabled = false;
+                filterBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+            }
+        }
+
+        async function handleFilter() {
+            headerLoader.classList.remove('hidden');
+            summarySection.classList.remove('active');
+            detailsSection.classList.remove('active');
+            
+            const dataMinStr = document.getElementById('data-min-filter').value;
+            const dataMaxStr = document.getElementById('data-max-filter').value;
+
+            if (!dataMinStr || !dataMaxStr) {
+                addNotification("Por favor, selecione as datas de início e fim.", "error");
+                headerLoader.classList.add('hidden');
+                return;
+            }
+
+            const filters = {
+                ufs: multiSelectInstances.uf.getSelected(),
+                cidades: multiSelectInstances.cidade.getSelected(),
+                rotas: multiSelectInstances.rota.getSelected(),
+                dataMin: `${dataMinStr}T00:00:00`,
+                dataMax: `${dataMaxStr}T23:59:59.999`
+            };
+
+            try {
+                const rawData = await fetchFilteredData(filters);
+                
+                filteredData = rawData.map(item => ({
+                    ...item,
+                    Data_Emissao: new Date(item.Emissão_Data_Hora),
+                    rotaNormalizada: normalizeRouteName(item.rota)
+                })).map(item => {
+                    if (item.situacao_resumida === 'CANHOTO RETIDO') {
+                        return { ...item, Valor_Frete_RRS: 0, Peso_Cálculo_Kg: 0, Valor_Nota_Fiscal_RRS: 0 };
+                    }
+                    return item;
+                });
+
+                selectedRoutes = [];
+                selectedDeliveries.clear();
+                orderedData = null;
+                detailsSection.innerHTML = '';
+                
+                if (filteredData.length === 0) {
+                    addNotification("Nenhum dado encontrado com os filtros selecionados.");
+                    summarySection.innerHTML = '<p class="p-4 text-center">Nenhum dado encontrado.</p>';
+                } else {
+                    addNotification(`${filteredData.length} registros encontrados.`);
+                    renderSummary();
+                }
+                switchTab('summary');
+            } catch (err) {
+                addNotification(`Erro ao buscar dados: ${err.message}`, 'error');
+            } finally {
+                headerLoader.classList.add('hidden');
+            }
+        }
+
+        // --- LÓGICA DE REDIMENSIONAMENTO DE COLUNAS ---
+        function makeTableResizable(table) {
+            const headers = table.querySelectorAll('th.resizable-th');
+            headers.forEach(header => {
+                const resizer = document.createElement('div');
+                resizer.className = 'resizer';
+                header.appendChild(resizer);
+
+                let startX;
+                let startWidth;
+
+                const onMouseMove = (e) => {
+                    const newWidth = startWidth + (e.pageX - startX);
+                    if (newWidth > 40) { // Largura mínima
+                        header.style.width = `${newWidth}px`;
+                    }
+                };
+
+                const onMouseUp = () => {
+                    resizer.classList.remove('resizing');
+                    document.removeEventListener('mousemove', onMouseMove);
+                    document.removeEventListener('mouseup', onMouseUp);
+                };
+
+                resizer.addEventListener('mousedown', (e) => {
+                    e.preventDefault();
+                    startX = e.pageX;
+                    startWidth = header.offsetWidth;
+                    resizer.classList.add('resizing');
+                    document.addEventListener('mousemove', onMouseMove);
+                    document.addEventListener('mouseup', onMouseUp);
+                });
+            });
+        }
+
+        // --- FUNÇÕES DE RENDERIZAÇÃO ---
+        function renderSummary() {
+            let summary = Object.values(filteredData.reduce((acc, item) => {
+                const routeName = item.rotaNormalizada;
+                if (!acc[routeName]) {
+                    acc[routeName] = { name: routeName, count: 0, frete: 0, nf: 0, peso: 0, volumes: 0, cidades: new Set(), noPrazo: 0, foraPrazo: 0 };
+                }
+                acc[routeName].count++;
+                acc[routeName].frete += Number(item.Valor_Frete_RRS) || 0;
+                acc[routeName].nf += Number(item.Valor_Nota_Fiscal_RRS) || 0;
+                acc[routeName].peso += Number(item.Peso_Cálculo_Kg) || 0;
+                acc[routeName].volumes += Number(item.Quantidade_Volumes) || 0;
+                acc[routeName].cidades.add(item.Destino_Cidade);
+
+                const previsao = new Date(item.Previsão_Entrega);
+                const hoje = new Date();
+                hoje.setHours(0,0,0,0);
+                if (previsao >= hoje) acc[routeName].noPrazo++;
+                else acc[routeName].foraPrazo++;
+                return acc;
+            }, {}));
+            
+            if (summarySort.column) {
+                summary.sort((a, b) => {
+                    const valA = a[summarySort.column];
+                    const valB = b[summarySort.column];
+                    if (typeof valA === 'string') {
+                        return summarySort.direction === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
+                    }
+                    return summarySort.direction === 'asc' ? valA - valB : valB - valA;
+                });
+            }
+            
+            const getSortIcon = (key) => {
+                if (summarySort.column !== key) return `<svg class="sort-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l4-4 4 4m0 6l-4 4-4-4"></path></svg>`;
+                if (summarySort.direction === 'asc') return `<svg class="sort-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"></path></svg>`;
+                return `<svg class="sort-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>`;
+            };
+
+            const headers = [ 
+                { key: 'name', label: 'Rota' }, 
+                { key: 'count', label: 'Entregas' }, 
+                { key: 'cidades', label: 'Cidades' }, 
+                { key: 'volumes', label: 'Volumes' }, 
+                { key: 'noPrazo', label: 'No Prazo' },
+                { key: 'foraPrazo', label: 'Fora do Prazo' },
+                { key: 'frete', label: 'Frete' },
+                { key: 'peso', label: 'Peso' },
+                { key: 'nf', label: 'Valor NF' }
+            ];
+            const headHTML = `<thead><tr><th class="p-2 w-10"><input type="checkbox" id="select-all-routes"></th>${headers.map(h => `<th class="sortable resizable-th ${summarySort.column === h.key ? summarySort.direction : ''}" data-sort-key="${h.key}">${h.label}${getSortIcon(h.key)}</th>`).join('')}</tr></thead>`;
+            
+            const bodyHTML = summary.map(row => `
+                <tr class="border-t border-app">
+                    <td class="p-2"><input type="checkbox" class="route-checkbox" data-route="${row.name}" ${selectedRoutes.includes(row.name) ? 'checked' : ''}></td>
+                    <td class="font-bold" title="${row.name}">${row.name}</td>
+                    <td class="col-align-center">${row.count}</td>
+                    <td class="col-align-center">${row.cidades.size}</td>
+                    <td class="col-align-center">${row.volumes}</td>
+                    <td class="col-align-center"><span class="text-green-500 font-semibold">${row.noPrazo}</span></td>
+                    <td class="col-align-center"><span class="text-red-500 font-semibold">${row.foraPrazo}</span></td>
+                    <td class="col-align-right">R$ ${row.frete.toFixed(2)}</td>
+                    <td class="col-align-right">${row.peso.toFixed(2)} Kg</td>
+                    <td class="col-align-right">R$ ${row.nf.toFixed(2)}</td>
+                </tr>
+            `).join('');
+
+            summarySection.innerHTML = `
+                <div class="bg-app-secondary p-4 rounded-lg flex flex-col">
+                    <div id="summary-content" class="overflow-auto">
+                        <table class="w-full table-fixed">${headHTML}<tbody>${bodyHTML}</tbody></table>
+                    </div>
+                </div>
+            `;
+            
+            makeTableResizable(document.querySelector("#summary-content table"));
+
+            document.getElementById('select-all-routes').addEventListener('change', handleSelectAllRoutes);
+            document.querySelectorAll('.route-checkbox').forEach(cb => cb.addEventListener('change', handleCheckboxChange));
+            document.querySelectorAll('#summary-content th.sortable').forEach(th => th.addEventListener('click', handleSortSummary));
+        }
+        function handleSortSummary(e) {
+            const key = e.currentTarget.dataset.sortKey;
+            if (summarySort.column === key) {
+                summarySort.direction = summarySort.direction === 'asc' ? 'desc' : 'asc';
+            } else {
+                summarySort.column = key;
+                summarySort.direction = 'asc';
+            }
+            renderSummary();
+        }
+        
+        function handleSortDetails(e) {
+            const key = e.currentTarget.dataset.sortKey;
+            if (!key) return;
+
+            if (detailsSort.column === key) {
+                detailsSort.direction = detailsSort.direction === 'asc' ? 'desc' : 'asc';
+            } else {
+                detailsSort.column = key;
+                detailsSort.direction = 'asc';
+            }
+            renderDetails();
+        }
+        
+        function handleSelectAllRoutes(e) {
+            const isChecked = e.target.checked;
+            const checkboxes = document.querySelectorAll('.route-checkbox');
+            
+            selectedRoutes = [];
+            if (isChecked) {
+                checkboxes.forEach(cb => {
+                    cb.checked = true;
+                    selectedRoutes.push(cb.dataset.route);
+                });
+            } else {
+                checkboxes.forEach(cb => {
+                    cb.checked = false;
+                });
+            }
+            
+            orderedData = null;
+            detailsSort.column = null;
+            selectedDeliveries.clear();
+            renderDetails();
+        }
+
+        function handleCheckboxChange(e) {
+            const route = e.target.dataset.route;
+            if (e.target.checked) {
+                if (!selectedRoutes.includes(route)) selectedRoutes.push(route);
+            } else {
+                selectedRoutes = selectedRoutes.filter(r => r !== route);
+            }
+            orderedData = null;
+            detailsSort.column = null;
+            selectedDeliveries.clear();
+            renderDetails();
+        }
+
+        function handleDeliverySelectionChange(e) {
+            const deliveryId = e.target.dataset.id;
+            if (e.target.checked) {
+                selectedDeliveries.add(deliveryId);
+            } else {
+                selectedDeliveries.delete(deliveryId);
+            }
+            updateSelectedTotals();
+        }
+
+        function handleSelectAllDeliveries(e) {
+            const isChecked = e.target.checked;
+            const checkboxes = document.querySelectorAll('.delivery-checkbox');
+            checkboxes.forEach(cb => {
+                cb.checked = isChecked;
+                const deliveryId = cb.dataset.id;
+                if (isChecked) {
+                    selectedDeliveries.add(deliveryId);
+                } else {
+                    selectedDeliveries.delete(deliveryId);
+                }
+            });
+            updateSelectedTotals();
+        }
+
+        function updateSelectedTotals() {
+            const totalsContainer = document.getElementById('selection-totals');
+            if (!totalsContainer) return;
+
+            if (selectedDeliveries.size === 0) {
+                totalsContainer.innerHTML = '';
+                return;
+            }
+
+            let totalVol = 0, totalNF = 0, totalFrete = 0, totalPeso = 0;
+
+            const selectedItems = filteredData.filter(item => selectedDeliveries.has(item.CTRC_Identificador));
+
+            selectedItems.forEach(item => {
+                totalVol += Number(item.Quantidade_Volumes) || 0;
+                totalNF += Number(item.Valor_Nota_Fiscal_RRS) || 0;
+                totalFrete += Number(item.Valor_Frete_RRS) || 0;
+                totalPeso += Number(item.Peso_Cálculo_Kg) || 0;
+            });
+            
+            totalsContainer.innerHTML = `
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-x-6 gap-y-2 text-center">
+                    <div>
+                        <span class="text-xs text-gray-400 uppercase tracking-wider block">Volumes</span>
+                        <span class="text-xl font-bold">${totalVol}</span>
+                    </div>
+                    <div>
+                        <span class="text-xs text-gray-400 uppercase tracking-wider block">Peso</span>
+                        <span class="text-xl font-bold">${totalPeso.toFixed(2)} Kg</span>
+                    </div>
+                    <div>
+                        <span class="text-xs text-gray-400 uppercase tracking-wider block">Valor NF</span>
+                        <span class="text-xl font-bold">R$ ${totalNF.toFixed(2)}</span>
+                    </div>
+                    <div>
+                        <span class="text-xs text-gray-400 uppercase tracking-wider block">Frete</span>
+                        <span class="text-xl font-bold">R$ ${totalFrete.toFixed(2)}</span>
+                    </div>
+                </div>
+            `;
+        }
+
+
+        function renderDetails() {
+            if (selectedRoutes.length === 0) {
+                detailsSection.innerHTML = '<p class="p-4 text-center">Selecione uma ou mais rotas no resumo para ver os detalhes.</p>';
+                return;
+            }
+
+            let dataForTable = orderedData ? [...orderedData] : filteredData.filter(item => selectedRoutes.includes(item.rotaNormalizada));
+
+            if (detailsSort.column) {
+                dataForTable.sort((a, b) => {
+                    const valA = a[detailsSort.column];
+                    const valB = b[detailsSort.column];
+                    let comparison = 0;
+                    
+                    const numA = parseFloat(String(valA).replace(/[^0-9.,-]/g, '').replace(',', '.'));
+                    const numB = parseFloat(String(valB).replace(/[^0-9.,-]/g, '').replace(',', '.'));
+
+                    if (!isNaN(numA) && !isNaN(numB)) {
+                        comparison = numA - numB;
+                    } else if (typeof valA === 'string' && typeof valB === 'string') {
+                        comparison = valA.localeCompare(valB);
+                    } else {
+                        if (valA < valB) comparison = -1;
+                        if (valA > valB) comparison = 1;
+                    }
+                    
+                    return detailsSort.direction === 'asc' ? comparison : -comparison;
+                });
+            }
+            
+            const getSortIcon = (key) => {
+                if (detailsSort.column !== key) return `<svg class="sort-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l4-4 4 4m0 6l-4 4-4-4"></path></svg>`;
+                if (detailsSort.direction === 'asc') return `<svg class="sort-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"></path></svg>`;
+                return `<svg class="sort-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>`;
+            };
+
+            const headersConfig = orderedData 
+                ? [
+                    { key: 'ordem', label: 'Ordem', width: '4%', tdClass: 'col-align-center' },
+                    { key: 'CTRC_Identificador', label: 'CTRC', width: '8%' },
+                    { key: 'situacao_resumida', label: 'Situação', width: '10%' },
+                    { key: 'Tipo_Operação', label: 'Operação', width: '7%' },
+                    { key: 'Remetente_Nome', label: 'Remetente', width: '13%' },
+                    { key: 'Entrega_Nome', label: 'Recebedor', width: '13%' },
+                    { key: 'Destino_Cidade', label: 'Cidade', width: '10%' },
+                    { key: 'Entrega_Bairro', label: 'Bairro', width: '10%' },
+                    { key: 'Quantidade_Volumes', label: 'Vol', width: '4%', tdClass: 'col-align-center'},
+                    { key: 'Valor_Nota_Fiscal_RRS', label: 'NF', width: '6%', tdClass: 'col-align-right' },
+                    { key: 'Valor_Frete_RRS', label: 'Frete', width: '6%', tdClass: 'col-align-right' },
+                    { key: 'Peso_Cálculo_Kg', label: 'Peso', width: '5%', tdClass: 'col-align-right' }
+                  ]
+                : [
+                    { key: 'CTRC_Identificador', label: 'CTRC', width: '8%' },
+                    { key: 'Tipo_Operação', label: 'Operação', width: '6%' },
+                    { key: 'situacao_resumida', label: 'Situação', width: '10%' },
+                    { key: 'Descrição_Situação', label: 'Descrição', width: '12%' },
+                    { key: 'Remetente_Nome', label: 'Remetente', width: '13%' },
+                    { key: 'Entrega_Nome', label: 'Recebedor', width: '13%' },
+                    { key: 'Destino_UF', label: 'UF', width: '3%' },
+                    { key: 'Destino_Cidade', label: 'Cidade', width: '8%' },
+                    { key: 'Entrega_Bairro', label: 'Bairro', width: '8%' },
+                    { key: 'Entrega_CEP', label: 'CEP', width: '5%' },
+                    { key: 'Quantidade_Volumes', label: 'Vol', width: '3%' },
+                    { key: 'Valor_Nota_Fiscal_RRS', label: 'NF', width: '4%' },
+                    { key: 'Valor_Frete_RRS', label: 'Frete', width: '4%' },
+                    { key: 'Peso_Cálculo_Kg', label: 'Peso', width: '3%' }
+                  ];
+            
+            const headHTML = `<thead><tr><th class="p-2" style="width: 40px;"><input type="checkbox" id="select-all-deliveries"></th>${headersConfig.map(h => `<th class="sortable resizable-th ${detailsSort.column === h.key ? detailsSort.direction : ''}" style="width: ${h.width};" data-sort-key="${h.key}">${h.label}${getSortIcon(h.key)}</th>`).join('')}</tr></thead>`;
+            
+            const bodyHTML = dataForTable.map((row) => {
+                const isRoteirizado = row.Estado_Rota === 'Roteirizado';
+                const rowClass = isRoteirizado ? 'roteirizado-row' : '';
+                const cells = [];
+                headersConfig.forEach(col => {
+                    let content = row[col.key] === null || row[col.key] === undefined ? '' : row[col.key];
+                    let title = String(content);
+
+                    switch(col.key) {
+                        case 'Entrega_CEP': content = normalizeCep(content); break;
+                        case 'Valor_Nota_Fiscal_RRS':
+                        case 'Valor_Frete_RRS': content = `R$ ${(Number(content) || 0).toFixed(2)}`; break;
+                        case 'Peso_Cálculo_Kg': content = `${(Number(content) || 0).toFixed(2)} Kg`; break;
+                    }
+                    cells.push(`<td class="${col.tdClass || ''}" title="${title}">${content}</td>`);
+                });
+
+                return `<tr class="border-t border-app ${rowClass}"><td class="p-2"><input type="checkbox" class="delivery-checkbox" data-id="${row.CTRC_Identificador}" ${selectedDeliveries.has(row.CTRC_Identificador) ? 'checked' : ''}></td>${cells.join('')}</tr>`;
+            }).join('');
+
+            detailsSection.innerHTML = `
+                <div class="bg-app-secondary p-4 rounded-lg h-full flex flex-col">
+                    <div id="details-content-wrapper" class="flex flex-col flex-grow min-h-0">
+                        <div class="flex-shrink-0 flex items-center justify-between gap-4 mb-4">
+                            <div class="flex items-end gap-4">
+                               <div>
+                                    <label for="vehicle-plate" class="block text-sm font-medium mb-1">Placa do Veículo</label>
+                                    <input type="text" id="vehicle-plate" class="p-2 rounded-lg" placeholder="AAA-1234">
+                                </div>
+                                <button id="roteirizar-btn-inner" class="btn-secondary rounded-lg px-4 py-2 transition h-10">Roteirizar</button>
+                                <button id="undo-roteirizar-btn" class="btn-danger rounded-lg px-4 py-2 transition h-10">Desfazer Roteirização</button>
+                            </div>
+                            <div id="selection-totals" class="p-2 bg-app-tertiary rounded-lg"></div>
+                        </div>
+                        <div id="roteirizacao-result" class="my-4"></div>
+                        <div id="details-content" class="overflow-auto flex-grow">
+                            <table class="w-full table-fixed">${headHTML}<tbody>${bodyHTML}</tbody></table>
+                        </div>
+                        <div id="export-buttons" class="mt-4 flex gap-4 flex-shrink-0"></div>
+                    </div>
+                </div>
+            `;
+            
+            makeTableResizable(document.querySelector("#details-content table"));
+
+            document.getElementById('roteirizar-btn-inner').addEventListener('click', handleRoteirizar);
+            document.getElementById('undo-roteirizar-btn').addEventListener('click', handleUndoRoteirizacao);
+            document.querySelectorAll('.delivery-checkbox').forEach(cb => cb.addEventListener('change', handleDeliverySelectionChange));
+            document.getElementById('select-all-deliveries').addEventListener('change', handleSelectAllDeliveries);
+            document.querySelectorAll('#details-content th.sortable').forEach(th => th.addEventListener('click', handleSortDetails));
+
+            if(orderedData) renderExportButtons();
+            updateSelectedTotals();
+        }
+
+        async function updateEstadoRota(ids, status) {
+            const updates = [];
+            
+            for (const id of ids) {
+                const item = filteredData.find(d => d.CTRC_Identificador === id);
+                if (item && item.sourceTable) {
+                     updates.push(
+                         supabaseClient.from(item.sourceTable)
+                         .update({ Estado_Rota: status })
+                         .eq('CTRC_Identificador', id)
+                     );
+                }
+            }
+            
+            const results = await Promise.all(updates);
+            results.forEach(result => {
+                if (result.error) {
+                    console.error("Erro ao atualizar Estado_Rota:", result.error);
+                    addNotification(`Falha ao atualizar status: ${result.error.message}`, 'error');
+                }
+            });
+
+            filteredData.forEach(item => {
+                if (ids.has(item.CTRC_Identificador)) {
+                    item.Estado_Rota = status;
+                }
+            });
+
+            if (orderedData) {
+                 orderedData.forEach(item => {
+                    if (ids.has(item.CTRC_Identificador)) {
+                        item.Estado_Rota = status;
+                    }
+                });
+            }
+        }
+
+        async function handleUndoRoteirizacao() {
+            if (selectedDeliveries.size === 0) {
+                addNotification("Nenhuma entrega selecionada para desfazer.", "error");
+                return;
+            }
+            
+            const btn = document.getElementById('undo-roteirizar-btn');
+            btn.textContent = 'Processando...';
+            btn.disabled = true;
+
+            try {
+                await updateEstadoRota(selectedDeliveries, null);
+                addNotification(`${selectedDeliveries.size} roteirizações desfeitas com sucesso.`);
+                selectedDeliveries.clear();
+                renderDetails();
+            } catch (e) {
+                addNotification(`Erro ao desfazer roteirização: ${e.message}`, 'error');
+            } finally {
+                btn.textContent = 'Desfazer Roteirização';
+                btn.disabled = false;
+            }
+        }
+
+        async function computeRouteWithFallback(waypoints, origin) {
+            const API_URL = "https://routes.googleapis.com/directions/v2:computeRoutes";
+            const headers = { 'Content-Type': 'application/json', 'X-Goog-Api-Key': GOOGLE_API_KEY, 'X-Goog-FieldMask': 'routes.optimizedIntermediateWaypointIndex,routes.duration,routes.distanceMeters,routes.legs' };
+            const buildPayload = (locations) => ({ "origin": { "address": origin }, "destination": { "address": origin }, "intermediates": locations.map(location => ({ "address": location })), "travelMode": "DRIVE", "routingPreference": "TRAFFIC_AWARE", "optimizeWaypointOrder": true, "languageCode": "pt-BR", "units": "METRIC" });
+
+            const strategies = [
+                { name: "Endereço Completo", locations: waypoints.map(w => w.address) },
+                { name: "CEP", locations: waypoints.map(w => w.cep) },
+                { name: "Cidade", locations: waypoints.map(w => w.city) }
+            ];
+            for (const strategy of strategies) {
+                if (strategy.locations.every(loc => loc)) {
+                    try {
+                        addNotification(`Tentando roteirizar com: ${strategy.name}...`);
+                        const payload = buildPayload(strategy.locations);
+                        const response = await fetch(API_URL, { method: 'POST', headers: headers, body: JSON.stringify(payload) });
+                        if (!response.ok) {
+                            const errorData = await response.json();
+                            throw new Error(`API: ${errorData.error?.message || 'Erro desconhecido'}`);
+                        }
+                        const result = await response.json();
+                        if (result.routes && result.routes.length > 0) {
+                            addNotification(`Sucesso com a estratégia: ${strategy.name}!`);
+                            return { result, successfulLocations: strategy.locations };
+                        }
+                    } catch (error) {
+                        console.warn(`Falha na estratégia '${strategy.name}':`, error);
+                        addNotification(`Falha com ${strategy.name}. Tentando próxima...`);
+                    }
+                }
+            }
+            return null;
+        }
+        async function handleRoteirizar() {
+            const btn = document.getElementById('roteirizar-btn-inner');
+            btn.textContent = 'Roteirizando...';
+            btn.disabled = true;
+
+            const selectedOrigin = originSelect.value;
+            if (!selectedOrigin) {
+                addNotification("Por favor, selecione um ponto de origem.", "error");
+                btn.textContent = 'Roteirizar';
+                btn.disabled = false;
+                return;
+            }
+
+            if (selectedDeliveries.size === 0) {
+                addNotification("Nenhuma entrega selecionada para roteirizar.", "error");
+                btn.textContent = 'Roteirizar';
+                btn.disabled = false;
+                return;
+            }
+
+            const dataToRoute = filteredData.filter(item => selectedDeliveries.has(item.CTRC_Identificador));
+            
+            const addressMap = new Map();
+            dataToRoute.forEach(d => {
+                if (d.Entrega_Bairro && d.Destino_Cidade && d.Destino_UF) {
+                    const fullAddress = `${d.Destino_Cidade}, ${d.Entrega_Bairro}, ${d.Destino_UF}`;
+                    if (!addressMap.has(fullAddress)) {
+                        addressMap.set(fullAddress, { deliveries: [], cep: normalizeCep(d.Entrega_CEP), city: `${d.Destino_Cidade} - ${d.Destino_UF}` });
+                    }
+                    addressMap.get(fullAddress).deliveries.push(d);
+                }
+            });
+            const uniqueWaypoints = Array.from(addressMap.entries()).map(([address, data]) => ({ address, ...data }));
+            if (uniqueWaypoints.length === 0) {
+                addNotification("Nenhum endereço válido para roteirizar.", "error");
+                btn.textContent = 'Roteirizar';
+                btn.disabled = false;
+                return;
+            }
+            const chunks = [];
+            for (let i = 0; i < uniqueWaypoints.length; i += MAX_WAYPOINTS) {
+                chunks.push(uniqueWaypoints.slice(i, i + MAX_WAYPOINTS));
+            }
+
+            if (chunks.length > 1) addNotification(`Rota dividida em ${chunks.length} partes.`);
+            let finalOrderedDeliveries = [];
+            let finalOrderedWaypoints = [];
+            let totalDistance = 0;
+            let totalDuration = 0;
+            let globalOrderIndex = 1;
+            for (const chunk of chunks) {
+                const apiResult = await computeRouteWithFallback(chunk, selectedOrigin);
+                if (apiResult && apiResult.result.routes) {
+                    const route = apiResult.result.routes[0];
+                    const optimizedOrderIndices = route.optimizedIntermediateWaypointIndex || [];
+                    const orderedChunkWaypoints = optimizedOrderIndices.map(index => chunk[index]);
+
+                    finalOrderedWaypoints.push(...orderedChunkWaypoints);
+                    totalDistance += route.distanceMeters || 0;
+                    totalDuration += parseInt(route.duration?.replace('s', '') || 0, 10);
+
+                    const legInfoMap = new Map();
+                    route.legs.forEach((leg, i) => {
+                        const destIndex = (i < optimizedOrderIndices.length) ? optimizedOrderIndices[i] : -1;
+                        if (destIndex !== -1) {
+                            const waypoint = chunk[destIndex];
+                            legInfoMap.set(waypoint.address, `Dist: ${(leg.distanceMeters / 1000).toFixed(1)}km, Duração: ${Math.round(parseInt(leg.duration.replace('s', ''))/60)}min`);
+                        }
+                    });
+                    orderedChunkWaypoints.forEach(waypoint => {
+                        waypoint.deliveries.forEach(delivery => {
+                            finalOrderedDeliveries.push({ ...delivery, ordem: globalOrderIndex, infoRota: legInfoMap.get(waypoint.address) || 'N/A' });
+                        });
+                        globalOrderIndex++;
+                    });
+                } else {
+                    addNotification(`Falha ao roteirizar o trecho: "${chunk[0].address}".`, "error");
+                    chunk.forEach(w => w.deliveries.forEach(d => finalOrderedDeliveries.push({ ...d, ordem: 999, infoRota: 'FALHA' })));
+                }
+            }
+            
+            await updateEstadoRota(selectedDeliveries, 'Roteirizado');
+
+            orderedData = finalOrderedDeliveries.sort((a, b) => a.ordem - b.ordem);
+            detailsSort.column = 'ordem';
+            detailsSort.direction = 'asc';
+            
+            const resultContainer = document.getElementById('roteirizacao-result');
+            if (resultContainer) {
+                const addressesForUrl = [selectedOrigin, ...finalOrderedWaypoints.map(w => w.address), selectedOrigin];
+                currentMapsUrl = `https://www.google.com/maps/dir/${addressesForUrl.map(addr => encodeURIComponent(addr)).join('/')}`;
+                resultContainer.innerHTML = `
+                    <div class="p-4 bg-app-tertiary rounded-lg fade-in">
+                        <h3 class="text-xl font-bold">Resultado da Roteirização</h3>
+                        <p>Duração Total: <strong>${Math.round(totalDuration / 60)} min</strong> | Distância Total: <strong>${(totalDistance / 1000).toFixed(2)} km</strong></p>
+                        <a href="${currentMapsUrl}" target="_blank" class="text-blue-400 hover:underline font-bold">Ver Rota no Google Maps</a>
+                    </div>`;
+            }
+            
+            renderDetails();
+            renderExportButtons();
+            btn.textContent = 'Roteirizar';
+            btn.disabled = false;
+        }
+        
+        function renderExportButtons() {
+            const container = document.getElementById('export-buttons');
+            if (!container) return;
+            container.innerHTML = `
+                <button id="export-xlsx" class="bg-green-700 hover:bg-green-600 text-white rounded-lg px-4 py-2 transition">Exportar Romaneio (XLSX)</button>
+                <button id="export-pdf" class="bg-red-700 hover:bg-red-600 text-white rounded-lg px-4 py-2 transition">Exportar Romaneio (PDF)</button>
+            `;
+            document.getElementById('export-xlsx').addEventListener('click', exportToXLSX);
+            document.getElementById('export-pdf').addEventListener('click', exportToPDF);
+        }
+
+        function getRomaneioData() {
+            const vehiclePlate = document.getElementById('vehicle-plate').value.toUpperCase();
+            const originKey = Object.keys(ORIGINS).find(key => ORIGINS[key] === originSelect.value);
+            const originDetails = ORIGIN_DETAILS[originKey];
+            const today = new Date().toLocaleDateString('pt-BR');
+
+            const tableHeaders = ['Ordem', 'CTRC', 'Situação', 'Operação', 'Remetente', 'Recebedor', 'Cidade', 'Bairro', 'Vol', 'NF', 'Frete', 'Peso'];
+            const tableBody = orderedData.map(row => [
+                row.ordem,
+                row.CTRC_Identificador,
+                row.situacao_resumida,
+                row.Tipo_Operação,
+                row.Remetente_Nome,
+                row.Entrega_Nome,
+                row.Destino_Cidade,
+                row.Entrega_Bairro,
+                row.Quantidade_Volumes,
+                (Number(row.Valor_Nota_Fiscal_RRS) || 0),
+                (Number(row.Valor_Frete_RRS) || 0),
+                (Number(row.Peso_Cálculo_Kg) || 0)
+            ]);
+
+            // Calcular Totais
+            const totals = {
+                vol: tableBody.reduce((sum, row) => sum + Number(row[8]), 0),
+                nf: tableBody.reduce((sum, row) => sum + Number(row[9]), 0),
+                frete: tableBody.reduce((sum, row) => sum + Number(row[10]), 0),
+                peso: tableBody.reduce((sum, row) => sum + Number(row[11]), 0)
+            };
+
+            const footer = [
+                { content: 'TOTAIS', colSpan: 8, styles: { halign: 'right', fontStyle: 'bold' } },
+                { content: totals.vol, styles: { fontStyle: 'bold' } },
+                { content: `R$ ${totals.nf.toFixed(2)}`, styles: { fontStyle: 'bold' } },
+                { content: `R$ ${totals.frete.toFixed(2)}`, styles: { fontStyle: 'bold' } },
+                { content: `${totals.peso.toFixed(2)} Kg`, styles: { fontStyle: 'bold' } },
+            ];
+            
+            // Formatar body para string depois de calcular
+            const formattedBody = tableBody.map(row => [
+                ...row.slice(0, 9),
+                `R$ ${row[9].toFixed(2)}`,
+                `R$ ${row[10].toFixed(2)}`,
+                `${row[11].toFixed(2)} Kg`
+            ]);
+
+
+            return { tableHeaders, tableBody: formattedBody, footer, totals, vehiclePlate, originDetails, today };
+        }
+
+        function exportToXLSX() {
+            const { tableHeaders, tableBody, totals, vehiclePlate, originDetails, today } = getRomaneioData();
+            
+            const headerXLSX = [
+                ["Romaneio de Carga"],
+                [`Data: ${today}`, `Placa do veículo: ${vehiclePlate}`],
+                [`Filial: ${originDetails.name}`],
+                [`Endereço: ${originDetails.address}`],
+                [`Telefone: ${originDetails.phones.join(' / ')}`],
+                []
+            ];
+
+            const footerXLSX = [
+                "", "", "", "", "", "", "", "TOTAIS",
+                totals.vol,
+                `R$ ${totals.nf.toFixed(2)}`,
+                `R$ ${totals.frete.toFixed(2)}`,
+                `${totals.peso.toFixed(2)} Kg`
+            ];
+
+            const wb = XLSX.utils.book_new();
+            const ws_data = [
+                ...headerXLSX,
+                tableHeaders,
+                ...tableBody,
+                [],
+                footerXLSX
+            ];
+            const ws = XLSX.utils.aoa_to_sheet(ws_data);
+            
+            ws['!cols'] = [
+                { wch: 5 }, { wch: 15 }, { wch: 15 }, { wch: 10 }, { wch: 30 }, { wch: 30 }, 
+                { wch: 20 }, { wch: 20 }, { wch: 5 }, { wch: 15 }, { wch: 15 }, { wch: 15 }
+            ];
+
+            XLSX.utils.book_append_sheet(wb, ws, "Romaneio");
+            XLSX.writeFile(wb, `Romaneio_${vehiclePlate || 'sem_placa'}.xlsx`);
+        }
+
+        function exportToPDF() {
+            const { tableHeaders, tableBody, footer, vehiclePlate, originDetails, today } = getRomaneioData();
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF({ orientation: 'landscape' });
+            
+            doc.autoTable({
+                didDrawPage: function (data) {
+                    const pageRightX = doc.internal.pageSize.getWidth() - 15;
+                    let currentY = 15;
+
+                    doc.setFontSize(14);
+                    doc.text("Romaneio de Carga", 15, currentY);
+                    
+                    // QR Code
+                    if (currentMapsUrl) {
+                        try {
+                            const qr = qrcode(0, 'L');
+                            qr.addData(currentMapsUrl);
+                            qr.make();
+                            const qrImgData = qr.createDataURL(4);
+                            doc.addImage(qrImgData, 'PNG', pageRightX - 30, 10, 30, 30);
+                        } catch(e) {
+                            console.error("Erro ao gerar QR Code:", e);
+                        }
+                    }
+
+                    currentY += 8;
+                    doc.setFontSize(10);
+                    doc.text(`Data: ${today} / Placa do veículo: ${vehiclePlate}`, 15, currentY);
+                    
+                    currentY += 5;
+                    doc.setFontSize(8);
+                    doc.text(`Filial: ${originDetails.name}`, 15, currentY);
+                    currentY += 4;
+                    doc.text(`Endereço: ${originDetails.address}`, 15, currentY);
+                    currentY += 4;
+                    doc.text(`Telefone: ${originDetails.phones.join(' / ')}`, 15, currentY);
+                },
+                startY: 50, 
+                head: [tableHeaders],
+                body: tableBody,
+                foot: [footer],
+                showFoot: 'lastPage',
+                theme: 'grid',
+                styles: { fontSize: 7, cellPadding: 1.5 },
+                headStyles: { fillColor: [55, 65, 81], fontStyle: 'bold' },
+                footStyles: { fillColor: [55, 65, 81], textColor: [255, 255, 255] }
+            });
+
+            doc.save(`Romaneio_${vehiclePlate || 'sem_placa'}.pdf`);
+        }
+
+        function switchTab(tabName) {
+            if (tabName === 'summary') {
+                summaryTabBtn.classList.add('active');
+                detailsTabBtn.classList.remove('active');
+                summarySection.classList.add('active');
+                detailsSection.classList.remove('active');
+            } else {
+                summaryTabBtn.classList.remove('active');
+                detailsTabBtn.classList.add('active');
+                summarySection.classList.remove('active');
+                detailsSection.classList.add('active');
+            }
+        }
+
+        // --- INICIALIZAÇÃO ---
+        function initializeApp() {
+            const savedTheme = localStorage.getItem('theme') || 'dark';
+            applyTheme(savedTheme);
+            
+            Object.keys(ORIGINS).forEach(key => {
+                const option = document.createElement('option');
+                option.value = ORIGINS[key];
+                option.textContent = key;
+                originSelect.appendChild(option);
+            });
+
+            document.getElementById('data-max-filter').value = new Date().toISOString().split('T')[0];
+            let sevenDaysAgo = new Date();
+            sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+            document.getElementById('data-min-filter').value = sevenDaysAgo.toISOString().split('T')[0];
+
+            filterBtn.addEventListener('click', handleFilter);
+            summaryTabBtn.addEventListener('click', () => switchTab('summary'));
+            detailsTabBtn.addEventListener('click', () => switchTab('details'));
+            
+            populateFilters();
+        }
+
+        initializeApp();
+    </script>
+</body>
+</html>
