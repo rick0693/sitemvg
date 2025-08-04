@@ -41,14 +41,12 @@
             --text-secondary: #4b5563; /* gray-600 */
             --border-color: #d1d5db; /* gray-300 */
             --accent-blue: #2563eb;
-            /* Verde mais escuro para melhor contraste no tema claro */
             --row-highlight: rgba(22, 163, 74, 0.15); 
         }
         
-        /* Ajuste para remover barra de rolagem da página */
         html, body {
             height: 100%;
-            overflow: hidden; /* Impede a rolagem no nível do body */
+            overflow: hidden;
         }
 
         body { 
@@ -58,13 +56,13 @@
             transition: background-color 0.3s, color 0.3s;
         }
         
-        /* Container principal da aplicação com rolagem interna */
         #app {
             height: 100vh;
-            overflow-y: auto; /* Permite a rolagem apenas dentro do app */
+            overflow-y: auto;
         }
 
         .bg-app-secondary { background-color: var(--bg-secondary); }
+        .bg-app-tertiary { background-color: var(--bg-tertiary); }
         .border-app { border-color: var(--border-color); }
 
         .btn-primary { background-color: var(--accent-blue); color: white; }
@@ -85,7 +83,6 @@
             border-spacing: 0;
         }
 
-        /* Congela o cabeçalho da tabela */
         table thead th { 
             background-color: var(--bg-tertiary); 
             position: sticky; 
@@ -124,12 +121,11 @@
         #notification-panel { display: none; position: absolute; top: 60px; right: 20px; width: 300px; background-color: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 0.5rem; box-shadow: 0 4px 6px rgba(0,0,0,0.1); z-index: 100; }
         #theme-toggle-btn .icon { transition: transform 0.3s ease-in-out; }
 
-        /* Abas fixas */
         #tabs-container {
             position: sticky;
             top: 0;
-            z-index: 20; /* Garante que fique sobre o conteúdo da tabela */
-            background-color: var(--bg-primary); /* Fundo para não ficar transparente */
+            z-index: 20;
+            background-color: var(--bg-primary);
         }
 
         .tab-button {
@@ -143,18 +139,20 @@
             border-bottom-color: var(--accent-blue);
         }
         .tab-content { display: none; }
-        .tab-content.active { display: block; }
+        .tab-content.active { display: flex; } /* Use flex for layout */
 
         #summary-content table,
-        #details-content table {
+        #details-content table,
+        #schedule-content table {
             table-layout: fixed;
             width: 100%;
         }
 
         #summary-content th, #summary-content td,
-        #details-content th, #details-content td {
+        #details-content th, #details-content td,
+        #schedule-content th, #schedule-content td {
             white-space: nowrap;
-            padding: 0.75rem 0.5rem; /* Aumenta o padding para melhor visualização */
+            padding: 0.75rem 0.5rem;
             overflow: hidden;
             text-overflow: ellipsis;
             vertical-align: middle;
@@ -176,6 +174,24 @@
         .resizable-th { position: relative; }
         .resizer { position: absolute; top: 0; right: -2px; width: 5px; cursor: col-resize; user-select: none; height: 100%; z-index: 20; }
         .resizer:hover, .resizing { background-color: var(--accent-blue); }
+        .action-icon { cursor: pointer; transition: transform 0.2s; }
+        .action-icon:hover { transform: scale(1.1); }
+
+        .schedule-summary-row.editing {
+            background-color: var(--bg-hover);
+        }
+        .schedule-detail-row {
+            background-color: var(--bg-primary) !important;
+        }
+        .schedule-detail-row table th {
+            font-size: 0.8rem;
+            padding: 0.5rem;
+        }
+         .schedule-detail-row table td {
+            font-size: 0.8rem;
+            padding: 0.5rem;
+            white-space: normal;
+        }
     </style>
 </head>
 <body class="transition-colors duration-300">
@@ -203,7 +219,6 @@
             <div id="notification-list" class="text-sm space-y-2 max-h-64 overflow-y-auto"></div>
         </div>
         
-        <!-- Seção de Filtros -->
         <div class="bg-app-secondary p-4 rounded-lg flex-shrink-0">
             <div class="mb-4">
                 <label for="origin-select" class="block text-sm font-medium mb-1">Ponto de Origem</label>
@@ -234,16 +249,18 @@
             </div>
         </div>
 
-        <!-- Container das Abas e Tabelas -->
         <div id="results-container" class="flex flex-col gap-4 flex-grow min-h-0">
             <div class="flex border-b border-app flex-shrink-0" id="tabs-container">
                 <button id="summary-tab-btn" class="tab-button active">Resumo por Rota</button>
                 <button id="details-tab-btn" class="tab-button">Dados Detalhados</button>
+                <button id="schedule-tab-btn" class="tab-button">Cronograma de Carregamento</button>
             </div>
-            <div id="summary-section" class="tab-content active flex-grow overflow-y-auto"></div>
-            <div id="details-section" class="tab-content flex-grow overflow-y-auto"></div>
+            <div id="summary-section" class="tab-content active flex-grow"></div>
+            <div id="details-section" class="tab-content flex-grow"></div>
+            <div id="schedule-section" class="tab-content flex-grow"></div>
         </div>
     </div>
+
     <script type="module">
         // --- CONFIGURAÇÃO ---
         const SUPABASE_URL = "https://glyhzstmzwniflatcjra.supabase.co";
@@ -259,34 +276,18 @@
         };
         
         const ORIGIN_DETAILS = {
-            "VIANA-ES": {
-                name: "Filial Viana",
-                address: "Avenida Amazonas,s/nº Arlindo A Villaschi - Viana - ES",
-                cep: "29.136-308",
-                phones: ["(027) 3012-5102", "(027) 3012-5103"],
-                email: "filiales@rodomais.com.br"
-            },
-            "MURIAE-MG": {
-                name: "Matriz MG",
-                address: "Rua Ramo A1, nº 1750, Distrito Industrial, Muriaé - MG",
-                cep: "36.880-000",
-                phones: ["(032) 3721 6741", "3722-4615", "3722-2540"],
-                email: "operacional@rodomais.com.br"
-            },
-            "BELOHORIZONTE-MG": {
-                name: "Filial Belo Horizonte",
-                address: "Rua Algarve, N° 700, São Francisco, Belo Horizonte - MG",
-                cep: "31255-190",
-                phones: ["(31) 3492-7723", "3495-3418", "3495-3424"],
-                email: "filialbh@rodomais.com.br"
-            }
+            "VIANA-ES": { name: "Filial Viana", address: "Avenida Amazonas,s/nº Arlindo A Villaschi - Viana - ES", cep: "29.136-308", phones: ["(027) 3012-5102", "(027) 3012-5103"], email: "filiales@rodomais.com.br" },
+            "MURIAE-MG": { name: "Matriz MG", address: "Rua Ramo A1, nº 1750, Distrito Industrial, Muriaé - MG", cep: "36.880-000", phones: ["(032) 3721 6741", "3722-4615", "3722-2540"], email: "operacional@rodomais.com.br" },
+            "BELOHORIZONTE-MG": { name: "Filial Belo Horizonte", address: "Rua Algarve, N° 700, São Francisco, Belo Horizonte - MG", cep: "31255-190", phones: ["(31) 3492-7723", "3495-3418", "3495-3424"], email: "filialbh@rodomais.com.br" }
         };
 
         const { createClient } = supabase;
         const supabaseClient = createClient(SUPABASE_URL, SUPABASE_KEY);
         
         // --- ESTADO DA APLICAÇÃO ---
+        let allLoadedData = [];
         let filteredData = [];
+        let scheduledData = new Map();
         let selectedRoutes = [];
         let selectedDeliveries = new Set();
         let orderedData = null;
@@ -301,6 +302,7 @@
         const headerLoader = document.getElementById('header-loader');
         const summarySection = document.getElementById('summary-section');
         const detailsSection = document.getElementById('details-section');
+        const scheduleSection = document.getElementById('schedule-section');
         const filterBtn = document.getElementById('filter-btn');
         const notificationIcon = document.getElementById('notification-icon');
         const notificationPanel = document.getElementById('notification-panel');
@@ -312,6 +314,7 @@
         const originSelect = document.getElementById('origin-select');
         const summaryTabBtn = document.getElementById('summary-tab-btn');
         const detailsTabBtn = document.getElementById('details-tab-btn');
+        const scheduleTabBtn = document.getElementById('schedule-tab-btn');
 
         // --- LÓGICA DE TEMA ---
         const applyTheme = (theme) => {
@@ -363,36 +366,21 @@
         const normalizeCep = (cep) => !cep ? null : String(cep).replace(/\D/g, '').padStart(8, '0');
         
         // --- LÓGICA DE DADOS ---
-        async function fetchFilteredData(filters) {
+        async function fetchAllDataOnce() {
             const PAGE_SIZE = 1000;
             let allRows = [];
-            let page = 0;
-            let hasMore = true;
-            const columns = "CTRC_Identificador, Destino_UF, Destino_Cidade, Entrega_Bairro, Entrega_CEP, Tipo_Operação, Código_Situação, Descrição_Situação, Unidade_Emissor, Emissão_Data_Hora, Previsão_Entrega, Valor_Frete_RRS, Valor_Nota_Fiscal_RRS, Peso_Cálculo_Kg, Quantidade_Volumes, Entrega_Nome, Remetente_Nome, rota, situacao_resumida, Estado_Rota";
-
-            const excludedCodSit = ['1-ENTREGUE', '36-MERCADORIA', '93-CTRC', '99-CTRC', '5-DEST', '7-CANCELAMENTO', '37-ENTREGA', '14-MERCADORIA', '50-FALTA', '94-CTRC'];
-            const excludedSituacaoResumida = ['ENTREGA FINALIZADA', 'EM ROTA DE ENTREGA', 'Parceiro Speed', 'COMPLEMENTAR'];
+            const columns = "CTRC_Identificador, Destino_UF, Destino_Cidade, Entrega_Bairro, Entrega_CEP, Tipo_Operação, Código_Situação, Descrição_Situação, Unidade_Emissor, Emissão_Data_Hora, Previsão_Entrega, Valor_Frete_RRS, Valor_Nota_Fiscal_RRS, Peso_Cálculo_Kg, Quantidade_Volumes, Entrega_Nome, Remetente_Nome, rota, situacao_resumida, Estado_Rota, placa_rota, data_programacao";
             const tables = ["ctrc_data_vna", "ctrc_data_bhz", "ctrc_data_mre", "ctrc_data_spa"];
 
             for (const tableName of tables) {
-                page = 0;
-                hasMore = true;
+                let page = 0;
+                let hasMore = true;
                 while (hasMore) {
-                    let query = supabaseClient
+                    const { data, error } = await supabaseClient
                         .from(tableName)
                         .select(columns)
-                        .not('Código_Situação', 'in', `(${excludedCodSit.join(',')})`)
-                        .not('situacao_resumida', 'in', `(${excludedSituacaoResumida.join(',')})`)
-                        .gte('Emissão_Data_Hora', filters.dataMin)
-                        .lte('Emissão_Data_Hora', filters.dataMax)
                         .order('CTRC_Identificador', { ascending: true })
                         .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
-
-                    if (filters.ufs.length > 0) query = query.in('Destino_UF', filters.ufs);
-                    if (filters.cidades.length > 0) query = query.in('Destino_Cidade', filters.cidades);
-                    if (filters.rotas.length > 0) query = query.in('rota', filters.rotas);
-
-                    const { data, error } = await query;
 
                     if (error) {
                         console.error(`Erro ao carregar a tabela ${tableName}:`, error);
@@ -408,7 +396,34 @@
                     }
                 }
             }
-            return allRows;
+            allLoadedData = allRows.map(item => ({
+                ...item,
+                Data_Emissao: new Date(item.Emissão_Data_Hora),
+                rotaNormalizada: normalizeRouteName(item.rota)
+            }));
+        }
+
+        function processAndFilterData(filters) {
+            const excludedCodSit = ['1-ENTREGUE', '36-MERCADORIA', '93-CTRC', '99-CTRC', '5-DEST', '7-CANCELAMENTO', '37-ENTREGA', '14-MERCADORIA', '50-FALTA', '94-CTRC'];
+            const excludedSituacaoResumida = ['ENTREGA FINALIZADA', 'EM ROTA DE ENTREGA', 'Parceiro Speed', 'COMPLEMENTAR'];
+            const dataMin = new Date(`${filters.dataMin}T00:00:00`);
+            const dataMax = new Date(`${filters.dataMax}T23:59:59`);
+
+            filteredData = allLoadedData.filter(item => {
+                const emissao = item.Data_Emissao;
+                const isIncluded = !excludedCodSit.includes(item.Código_Situação) &&
+                                     !excludedSituacaoResumida.includes(item.situacao_resumida) &&
+                                     emissao >= dataMin && emissao <= dataMax &&
+                                     (filters.ufs.length === 0 || filters.ufs.includes(item.Destino_UF)) &&
+                                     (filters.cidades.length === 0 || filters.cidades.includes(item.Destino_Cidade)) &&
+                                     (filters.rotas.length === 0 || filters.rotas.includes(item.rotaNormalizada));
+                return isIncluded;
+            }).map(item => {
+                if (item.situacao_resumida === 'CANHOTO RETIDO') {
+                    return { ...item, Valor_Frete_RRS: 0, Peso_Cálculo_Kg: 0, Valor_Nota_Fiscal_RRS: 0 };
+                }
+                return item;
+            });
         }
 
         // --- LÓGICA DOS FILTROS ---
@@ -488,59 +503,21 @@
             return { getSelected: () => selected };
         }
 
-
-        async function fetchDistinctValues(column) {
-            const tables = ["ctrc_data_vna", "ctrc_data_bhz", "ctrc_data_mre", "ctrc_data_spa"];
-            let allValues = new Set();
-
-            for (const table of tables) {
-                const { data, error } = await supabaseClient.from(table).select(column);
-                if (error) {
-                    console.error(`Erro ao buscar valores distintos de ${column} em ${table}:`, error);
-                    continue;
-                }
-                if (data) {
-                    data.forEach(item => {
-                        if (item[column]) {
-                            const value = column === 'rota' ? normalizeRouteName(item[column]) : item[column];
-                            allValues.add(value);
-                        }
-                    });
-                }
-            }
-            return [...allValues].sort();
-        }
-
-        async function populateFilters() {
-            headerLoader.classList.remove('hidden');
-            filterBtn.disabled = true;
-            filterBtn.classList.add('opacity-50', 'cursor-not-allowed');
-
-            try {
-                const [ufs, cidades, rotas] = await Promise.all([
-                    fetchDistinctValues('Destino_UF'),
-                    fetchDistinctValues('Destino_Cidade'),
-                    fetchDistinctValues('rota')
-                ]);
-
-                multiSelectInstances['uf'] = createMultiSelect('uf-filter-container', ufs, 'Selecione UFs...');
-                multiSelectInstances['cidade'] = createMultiSelect('cidade-filter-container', cidades, 'Selecione Cidades...');
-                multiSelectInstances['rota'] = createMultiSelect('rota-filter-container', rotas, 'Selecione Rotas...');
-                
-                addNotification("Filtros prontos para uso.");
-            } catch (error) {
-                addNotification(`Erro ao carregar filtros: ${error.message}`, 'error');
-            } finally {
-                headerLoader.classList.add('hidden');
-                filterBtn.disabled = false;
-                filterBtn.classList.remove('opacity-50', 'cursor-not-allowed');
-            }
+        function populateFilters() {
+            const ufs = [...new Set(allLoadedData.map(d => d.Destino_UF).filter(Boolean))].sort();
+            const cidades = [...new Set(allLoadedData.map(d => d.Destino_Cidade).filter(Boolean))].sort();
+            const rotas = [...new Set(allLoadedData.map(d => d.rotaNormalizada).filter(Boolean))].sort();
+            
+            multiSelectInstances['uf'] = createMultiSelect('uf-filter-container', ufs, 'Selecione UFs...');
+            multiSelectInstances['cidade'] = createMultiSelect('cidade-filter-container', cidades, 'Selecione Cidades...');
+            multiSelectInstances['rota'] = createMultiSelect('rota-filter-container', rotas, 'Selecione Rotas...');
+            addNotification("Filtros prontos para uso.");
         }
 
         async function handleFilter() {
             headerLoader.classList.remove('hidden');
-            summarySection.classList.remove('active');
-            detailsSection.classList.remove('active');
+            summarySection.innerHTML = '<div class="p-4 text-center">Processando...</div>';
+            detailsSection.innerHTML = '';
             
             const dataMinStr = document.getElementById('data-min-filter').value;
             const dataMaxStr = document.getElementById('data-max-filter').value;
@@ -555,28 +532,16 @@
                 ufs: multiSelectInstances.uf.getSelected(),
                 cidades: multiSelectInstances.cidade.getSelected(),
                 rotas: multiSelectInstances.rota.getSelected(),
-                dataMin: `${dataMinStr}T00:00:00`,
-                dataMax: `${dataMaxStr}T23:59:59.999`
+                dataMin: dataMinStr,
+                dataMax: dataMaxStr
             };
 
             try {
-                const rawData = await fetchFilteredData(filters);
+                processAndFilterData(filters);
                 
-                filteredData = rawData.map(item => ({
-                    ...item,
-                    Data_Emissao: new Date(item.Emissão_Data_Hora),
-                    rotaNormalizada: normalizeRouteName(item.rota)
-                })).map(item => {
-                    if (item.situacao_resumida === 'CANHOTO RETIDO') {
-                        return { ...item, Valor_Frete_RRS: 0, Peso_Cálculo_Kg: 0, Valor_Nota_Fiscal_RRS: 0 };
-                    }
-                    return item;
-                });
-
                 selectedRoutes = [];
                 selectedDeliveries.clear();
                 orderedData = null;
-                detailsSection.innerHTML = '';
                 
                 if (filteredData.length === 0) {
                     addNotification("Nenhum dado encontrado com os filtros selecionados.");
@@ -587,7 +552,7 @@
                 }
                 switchTab('summary');
             } catch (err) {
-                addNotification(`Erro ao buscar dados: ${err.message}`, 'error');
+                addNotification(`Erro ao processar dados: ${err.message}`, 'error');
             } finally {
                 headerLoader.classList.add('hidden');
             }
@@ -600,23 +565,7 @@
                 const resizer = document.createElement('div');
                 resizer.className = 'resizer';
                 header.appendChild(resizer);
-
-                let startX;
-                let startWidth;
-
-                const onMouseMove = (e) => {
-                    const newWidth = startWidth + (e.pageX - startX);
-                    if (newWidth > 40) { // Largura mínima
-                        header.style.width = `${newWidth}px`;
-                    }
-                };
-
-                const onMouseUp = () => {
-                    resizer.classList.remove('resizing');
-                    document.removeEventListener('mousemove', onMouseMove);
-                    document.removeEventListener('mouseup', onMouseUp);
-                };
-
+                let startX, startWidth;
                 resizer.addEventListener('mousedown', (e) => {
                     e.preventDefault();
                     startX = e.pageX;
@@ -625,6 +574,16 @@
                     document.addEventListener('mousemove', onMouseMove);
                     document.addEventListener('mouseup', onMouseUp);
                 });
+
+                function onMouseMove(e) {
+                    const newWidth = startWidth + (e.pageX - startX);
+                    if (newWidth > 40) header.style.width = `${newWidth}px`;
+                }
+                function onMouseUp() {
+                    resizer.classList.remove('resizing');
+                    document.removeEventListener('mousemove', onMouseMove);
+                    document.removeEventListener('mouseup', onMouseUp);
+                }
             });
         }
 
@@ -654,9 +613,7 @@
                 summary.sort((a, b) => {
                     const valA = a[summarySort.column];
                     const valB = b[summarySort.column];
-                    if (typeof valA === 'string') {
-                        return summarySort.direction === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
-                    }
+                    if (typeof valA === 'string') return summarySort.direction === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
                     return summarySort.direction === 'asc' ? valA - valB : valB - valA;
                 });
             }
@@ -668,15 +625,9 @@
             };
 
             const headers = [ 
-                { key: 'name', label: 'Rota' }, 
-                { key: 'count', label: 'Entregas' }, 
-                { key: 'cidades', label: 'Cidades' }, 
-                { key: 'volumes', label: 'Volumes' }, 
-                { key: 'noPrazo', label: 'No Prazo' },
-                { key: 'foraPrazo', label: 'Fora do Prazo' },
-                { key: 'frete', label: 'Frete' },
-                { key: 'peso', label: 'Peso' },
-                { key: 'nf', label: 'Valor NF' }
+                { key: 'name', label: 'Rota' }, { key: 'count', label: 'Entregas' }, { key: 'cidades', label: 'Cidades' }, 
+                { key: 'volumes', label: 'Volumes' }, { key: 'noPrazo', label: 'No Prazo' }, { key: 'foraPrazo', label: 'Fora do Prazo' },
+                { key: 'frete', label: 'Frete' }, { key: 'peso', label: 'Peso' }, { key: 'nf', label: 'Valor NF' }
             ];
             const headHTML = `<thead><tr><th class="p-2 w-10"><input type="checkbox" id="select-all-routes"></th>${headers.map(h => `<th class="sortable resizable-th ${summarySort.column === h.key ? summarySort.direction : ''}" data-sort-key="${h.key}">${h.label}${getSortIcon(h.key)}</th>`).join('')}</tr></thead>`;
             
@@ -692,16 +643,9 @@
                     <td class="col-align-right">R$ ${row.frete.toFixed(2)}</td>
                     <td class="col-align-right">${row.peso.toFixed(2)} Kg</td>
                     <td class="col-align-right">R$ ${row.nf.toFixed(2)}</td>
-                </tr>
-            `).join('');
+                </tr>`).join('');
 
-            summarySection.innerHTML = `
-                <div class="bg-app-secondary p-4 rounded-lg flex flex-col">
-                    <div id="summary-content" class="overflow-auto">
-                        <table class="w-full table-fixed">${headHTML}<tbody>${bodyHTML}</tbody></table>
-                    </div>
-                </div>
-            `;
+            summarySection.innerHTML = `<div class="bg-app-secondary p-4 rounded-lg h-full flex flex-col"><div id="summary-content" class="overflow-auto flex-grow"><table class="w-full table-auto">${headHTML}<tbody>${bodyHTML}</tbody></table></div></div>`;
             
             makeTableResizable(document.querySelector("#summary-content table"));
 
@@ -736,7 +680,6 @@
         function handleSelectAllRoutes(e) {
             const isChecked = e.target.checked;
             const checkboxes = document.querySelectorAll('.route-checkbox');
-            
             selectedRoutes = [];
             if (isChecked) {
                 checkboxes.forEach(cb => {
@@ -744,11 +687,8 @@
                     selectedRoutes.push(cb.dataset.route);
                 });
             } else {
-                checkboxes.forEach(cb => {
-                    cb.checked = false;
-                });
+                checkboxes.forEach(cb => { cb.checked = false; });
             }
-            
             orderedData = null;
             detailsSort.column = null;
             selectedDeliveries.clear();
@@ -770,12 +710,10 @@
 
         function handleDeliverySelectionChange(e) {
             const deliveryId = e.target.dataset.id;
-            if (e.target.checked) {
-                selectedDeliveries.add(deliveryId);
-            } else {
-                selectedDeliveries.delete(deliveryId);
-            }
+            if (e.target.checked) selectedDeliveries.add(deliveryId);
+            else selectedDeliveries.delete(deliveryId);
             updateSelectedTotals();
+            updateRoteirizarButtonState();
         }
 
         function handleSelectAllDeliveries(e) {
@@ -784,61 +722,50 @@
             checkboxes.forEach(cb => {
                 cb.checked = isChecked;
                 const deliveryId = cb.dataset.id;
-                if (isChecked) {
-                    selectedDeliveries.add(deliveryId);
-                } else {
-                    selectedDeliveries.delete(deliveryId);
-                }
+                if (isChecked) selectedDeliveries.add(deliveryId);
+                else selectedDeliveries.delete(deliveryId);
             });
             updateSelectedTotals();
+            updateRoteirizarButtonState();
         }
 
         function updateSelectedTotals() {
             const totalsContainer = document.getElementById('selection-totals');
             if (!totalsContainer) return;
-
             if (selectedDeliveries.size === 0) {
                 totalsContainer.innerHTML = '';
                 return;
             }
-
             let totalVol = 0, totalNF = 0, totalFrete = 0, totalPeso = 0;
-
             const selectedItems = filteredData.filter(item => selectedDeliveries.has(item.CTRC_Identificador));
-
             selectedItems.forEach(item => {
                 totalVol += Number(item.Quantidade_Volumes) || 0;
                 totalNF += Number(item.Valor_Nota_Fiscal_RRS) || 0;
                 totalFrete += Number(item.Valor_Frete_RRS) || 0;
                 totalPeso += Number(item.Peso_Cálculo_Kg) || 0;
             });
-            
-            totalsContainer.innerHTML = `
-                <div class="grid grid-cols-2 md:grid-cols-4 gap-x-6 gap-y-2 text-center">
-                    <div>
-                        <span class="text-xs text-gray-400 uppercase tracking-wider block">Volumes</span>
-                        <span class="text-xl font-bold">${totalVol}</span>
-                    </div>
-                    <div>
-                        <span class="text-xs text-gray-400 uppercase tracking-wider block">Peso</span>
-                        <span class="text-xl font-bold">${totalPeso.toFixed(2)} Kg</span>
-                    </div>
-                    <div>
-                        <span class="text-xs text-gray-400 uppercase tracking-wider block">Valor NF</span>
-                        <span class="text-xl font-bold">R$ ${totalNF.toFixed(2)}</span>
-                    </div>
-                    <div>
-                        <span class="text-xs text-gray-400 uppercase tracking-wider block">Frete</span>
-                        <span class="text-xl font-bold">R$ ${totalFrete.toFixed(2)}</span>
-                    </div>
-                </div>
-            `;
+            totalsContainer.innerHTML = `<div class="grid grid-cols-2 md:grid-cols-4 gap-x-6 gap-y-2 text-center"><div><span class="text-xs text-gray-400 uppercase tracking-wider block">Volumes</span><span class="text-xl font-bold">${totalVol}</span></div><div><span class="text-xs text-gray-400 uppercase tracking-wider block">Peso</span><span class="text-xl font-bold">${totalPeso.toFixed(2)} Kg</span></div><div><span class="text-xs text-gray-400 uppercase tracking-wider block">Valor NF</span><span class="text-xl font-bold">R$ ${totalNF.toFixed(2)}</span></div><div><span class="text-xs text-gray-400 uppercase tracking-wider block">Frete</span><span class="text-xl font-bold">R$ ${totalFrete.toFixed(2)}</span></div></div>`;
         }
 
+        function updateRoteirizarButtonState() {
+            const btn = document.getElementById('roteirizar-btn-inner');
+            if (!btn) return;
+
+            const selectedItems = filteredData.filter(item => selectedDeliveries.has(item.CTRC_Identificador));
+            const hasRoutedItem = selectedItems.some(item => item.Estado_Rota === 'Roteirizado');
+
+            if (hasRoutedItem) {
+                btn.disabled = true;
+                btn.classList.add('opacity-50', 'cursor-not-allowed');
+            } else {
+                btn.disabled = false;
+                btn.classList.remove('opacity-50', 'cursor-not-allowed');
+            }
+        }
 
         function renderDetails() {
             if (selectedRoutes.length === 0) {
-                detailsSection.innerHTML = '<p class="p-4 text-center">Selecione uma ou mais rotas no resumo para ver os detalhes.</p>';
+                detailsSection.innerHTML = '<div class="bg-app-secondary p-4 rounded-lg h-full flex items-center justify-center"><p class="text-center">Selecione uma ou mais rotas no resumo para ver os detalhes.</p></div>';
                 return;
             }
 
@@ -849,19 +776,11 @@
                     const valA = a[detailsSort.column];
                     const valB = b[detailsSort.column];
                     let comparison = 0;
-                    
                     const numA = parseFloat(String(valA).replace(/[^0-9.,-]/g, '').replace(',', '.'));
                     const numB = parseFloat(String(valB).replace(/[^0-9.,-]/g, '').replace(',', '.'));
-
-                    if (!isNaN(numA) && !isNaN(numB)) {
-                        comparison = numA - numB;
-                    } else if (typeof valA === 'string' && typeof valB === 'string') {
-                        comparison = valA.localeCompare(valB);
-                    } else {
-                        if (valA < valB) comparison = -1;
-                        if (valA > valB) comparison = 1;
-                    }
-                    
+                    if (!isNaN(numA) && !isNaN(numB)) comparison = numA - numB;
+                    else if (typeof valA === 'string' && typeof valB === 'string') comparison = valA.localeCompare(valB);
+                    else { if (valA < valB) comparison = -1; if (valA > valB) comparison = 1; }
                     return detailsSort.direction === 'asc' ? comparison : -comparison;
                 });
             }
@@ -872,57 +791,40 @@
                 return `<svg class="sort-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>`;
             };
 
+            const baseHeaders = [ 
+                { key: 'CTRC_Identificador', label: 'CTRC', width: '130px' }, { key: 'Tipo_Operação', label: 'Operação', width: '110px' }, 
+                { key: 'situacao_resumida', label: 'Situação', width: '150px' }, { key: 'Remetente_Nome', label: 'Remetente' }, 
+                { key: 'Entrega_Nome', label: 'Recebedor' }, { key: 'Destino_Cidade', label: 'Cidade', width: '150px' }, 
+                { key: 'Entrega_Bairro', label: 'Bairro', width: '150px' }, { key: 'Quantidade_Volumes', label: 'Vol', width: '70px', tdClass: 'col-align-center' }, 
+                { key: 'Valor_Nota_Fiscal_RRS', label: 'NF', width: '120px', tdClass: 'col-align-right' }, { key: 'Valor_Frete_RRS', label: 'Frete', width: '120px', tdClass: 'col-align-right' }, 
+                { key: 'Peso_Cálculo_Kg', label: 'Peso', width: '110px', tdClass: 'col-align-right' }
+            ];
+
             const headersConfig = orderedData 
-                ? [
-                    { key: 'ordem', label: 'Ordem', width: '4%', tdClass: 'col-align-center' },
-                    { key: 'CTRC_Identificador', label: 'CTRC', width: '8%' },
-                    { key: 'situacao_resumida', label: 'Situação', width: '10%' },
-                    { key: 'Tipo_Operação', label: 'Operação', width: '7%' },
-                    { key: 'Remetente_Nome', label: 'Remetente', width: '13%' },
-                    { key: 'Entrega_Nome', label: 'Recebedor', width: '13%' },
-                    { key: 'Destino_Cidade', label: 'Cidade', width: '10%' },
-                    { key: 'Entrega_Bairro', label: 'Bairro', width: '10%' },
-                    { key: 'Quantidade_Volumes', label: 'Vol', width: '4%', tdClass: 'col-align-center'},
-                    { key: 'Valor_Nota_Fiscal_RRS', label: 'NF', width: '6%', tdClass: 'col-align-right' },
-                    { key: 'Valor_Frete_RRS', label: 'Frete', width: '6%', tdClass: 'col-align-right' },
-                    { key: 'Peso_Cálculo_Kg', label: 'Peso', width: '5%', tdClass: 'col-align-right' }
-                  ]
-                : [
-                    { key: 'CTRC_Identificador', label: 'CTRC', width: '8%' },
-                    { key: 'Tipo_Operação', label: 'Operação', width: '6%' },
-                    { key: 'situacao_resumida', label: 'Situação', width: '10%' },
-                    { key: 'Descrição_Situação', label: 'Descrição', width: '12%' },
-                    { key: 'Remetente_Nome', label: 'Remetente', width: '13%' },
-                    { key: 'Entrega_Nome', label: 'Recebedor', width: '13%' },
-                    { key: 'Destino_UF', label: 'UF', width: '3%' },
-                    { key: 'Destino_Cidade', label: 'Cidade', width: '8%' },
-                    { key: 'Entrega_Bairro', label: 'Bairro', width: '8%' },
-                    { key: 'Entrega_CEP', label: 'CEP', width: '5%' },
-                    { key: 'Quantidade_Volumes', label: 'Vol', width: '3%' },
-                    { key: 'Valor_Nota_Fiscal_RRS', label: 'NF', width: '4%' },
-                    { key: 'Valor_Frete_RRS', label: 'Frete', width: '4%' },
-                    { key: 'Peso_Cálculo_Kg', label: 'Peso', width: '3%' }
-                  ];
-            
-            const headHTML = `<thead><tr><th class="p-2" style="width: 40px;"><input type="checkbox" id="select-all-deliveries"></th>${headersConfig.map(h => `<th class="sortable resizable-th ${detailsSort.column === h.key ? detailsSort.direction : ''}" style="width: ${h.width};" data-sort-key="${h.key}">${h.label}${getSortIcon(h.key)}</th>`).join('')}</tr></thead>`;
+                ? [ { key: 'ordem', label: 'Ordem', width: '70px', tdClass: 'col-align-center' }, ...baseHeaders, { key: 'actions', label: 'Ações', width: '80px', tdClass: 'col-align-center' } ]
+                : [ ...baseHeaders.slice(0, 3), { key: 'Descrição_Situação', label: 'Descrição' }, ...baseHeaders.slice(3, 7), { key: 'Entrega_CEP', label: 'CEP', width: '100px' }, ...baseHeaders.slice(7) ];
+
+            const headHTML = `<thead><tr><th class="p-2" style="width: 40px;"><input type="checkbox" id="select-all-deliveries"></th>${headersConfig.map(h => `<th class="sortable resizable-th ${detailsSort.column === h.key ? detailsSort.direction : ''}" style="${h.width ? `width: ${h.width};` : ''}" data-sort-key="${h.key}">${h.label}${getSortIcon(h.key)}</th>`).join('')}</tr></thead>`;
             
             const bodyHTML = dataForTable.map((row) => {
                 const isRoteirizado = row.Estado_Rota === 'Roteirizado';
                 const rowClass = isRoteirizado ? 'roteirizado-row' : '';
                 const cells = [];
                 headersConfig.forEach(col => {
+                    if (col.key === 'actions') {
+                        const globeIcon = `<a href="${currentMapsUrl}" target="_blank" title="Ver Rota no Google Maps"><svg xmlns="http://www.w3.org/2000/svg" class="action-icon text-blue-400 h-6 w-6 mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2h1a2 2 0 002-2v-1a2 2 0 012-2h1.945M7.881 4.002l.07-.07a2 2 0 012.828 0l.07.07M15.97 4.002l.07-.07a2 2 0 00-2.828 0l-.07.07m-2.064 14.004l.07.07a2 2 0 002.828 0l.07-.07M4.002 11.881l-.07.07a2 2 0 000 2.828l.07.07m14.004-2.965l-.07.07a2 2 0 01-2.828 0l-.07-.07M12 21a9 9 0 100-18 9 9 0 000 18z" /></svg></a>`;
+                        cells.push(`<td class="${col.tdClass || ''}">${globeIcon}</td>`);
+                        return;
+                    }
                     let content = row[col.key] === null || row[col.key] === undefined ? '' : row[col.key];
                     let title = String(content);
-
                     switch(col.key) {
                         case 'Entrega_CEP': content = normalizeCep(content); break;
-                        case 'Valor_Nota_Fiscal_RRS':
-                        case 'Valor_Frete_RRS': content = `R$ ${(Number(content) || 0).toFixed(2)}`; break;
+                        case 'Valor_Nota_Fiscal_RRS': case 'Valor_Frete_RRS': content = `R$ ${(Number(content) || 0).toFixed(2)}`; break;
                         case 'Peso_Cálculo_Kg': content = `${(Number(content) || 0).toFixed(2)} Kg`; break;
                     }
                     cells.push(`<td class="${col.tdClass || ''}" title="${title}">${content}</td>`);
                 });
-
                 return `<tr class="border-t border-app ${rowClass}"><td class="p-2"><input type="checkbox" class="delivery-checkbox" data-id="${row.CTRC_Identificador}" ${selectedDeliveries.has(row.CTRC_Identificador) ? 'checked' : ''}></td>${cells.join('')}</tr>`;
             }).join('');
 
@@ -934,7 +836,11 @@
                                <div>
                                     <label for="vehicle-plate" class="block text-sm font-medium mb-1">Placa do Veículo</label>
                                     <input type="text" id="vehicle-plate" class="p-2 rounded-lg" placeholder="AAA-1234">
-                                </div>
+                               </div>
+                               <div>
+                                    <label for="data-programacao" class="block text-sm font-medium mb-1">Data Programação</label>
+                                    <input type="date" id="data-programacao" class="p-2 rounded-lg">
+                               </div>
                                 <button id="roteirizar-btn-inner" class="btn-secondary rounded-lg px-4 py-2 transition h-10">Roteirizar</button>
                                 <button id="undo-roteirizar-btn" class="btn-danger rounded-lg px-4 py-2 transition h-10">Desfazer Roteirização</button>
                             </div>
@@ -946,79 +852,86 @@
                         </div>
                         <div id="export-buttons" class="mt-4 flex gap-4 flex-shrink-0"></div>
                     </div>
-                </div>
-            `;
+                </div>`;
             
+            document.getElementById('data-programacao').valueAsDate = new Date();
             makeTableResizable(document.querySelector("#details-content table"));
-
             document.getElementById('roteirizar-btn-inner').addEventListener('click', handleRoteirizar);
-            document.getElementById('undo-roteirizar-btn').addEventListener('click', handleUndoRoteirizacao);
+            document.getElementById('undo-roteirizar-btn').addEventListener('click', () => handleUndoRoteirizacao(selectedDeliveries));
             document.querySelectorAll('.delivery-checkbox').forEach(cb => cb.addEventListener('change', handleDeliverySelectionChange));
             document.getElementById('select-all-deliveries').addEventListener('change', handleSelectAllDeliveries);
             document.querySelectorAll('#details-content th.sortable').forEach(th => th.addEventListener('click', handleSortDetails));
-
             if(orderedData) renderExportButtons();
             updateSelectedTotals();
+            updateRoteirizarButtonState();
         }
 
-        async function updateEstadoRota(ids, status) {
-            const updates = [];
-            
+        async function updateDatabase(ids, updateData) {
+            const updatesByTable = {};
             for (const id of ids) {
-                const item = filteredData.find(d => d.CTRC_Identificador === id);
+                const item = allLoadedData.find(d => d.CTRC_Identificador === id);
                 if (item && item.sourceTable) {
-                     updates.push(
-                         supabaseClient.from(item.sourceTable)
-                         .update({ Estado_Rota: status })
-                         .eq('CTRC_Identificador', id)
-                     );
+                    if (!updatesByTable[item.sourceTable]) {
+                        updatesByTable[item.sourceTable] = [];
+                    }
+                    updatesByTable[item.sourceTable].push(id);
                 }
             }
             
-            const results = await Promise.all(updates);
+            const promises = Object.entries(updatesByTable).map(([tableName, tableIds]) => {
+                return supabaseClient.from(tableName)
+                    .update(updateData)
+                    .in('CTRC_Identificador', tableIds);
+            });
+
+            const results = await Promise.all(promises);
             results.forEach(result => {
                 if (result.error) {
-                    console.error("Erro ao atualizar Estado_Rota:", result.error);
+                    console.error("Erro ao atualizar banco de dados:", result.error);
                     addNotification(`Falha ao atualizar status: ${result.error.message}`, 'error');
                 }
             });
 
-            filteredData.forEach(item => {
+            // Update local data
+            allLoadedData.forEach(item => {
                 if (ids.has(item.CTRC_Identificador)) {
-                    item.Estado_Rota = status;
+                    Object.assign(item, updateData);
                 }
             });
-
-            if (orderedData) {
-                 orderedData.forEach(item => {
-                    if (ids.has(item.CTRC_Identificador)) {
-                        item.Estado_Rota = status;
-                    }
-                });
-            }
         }
-
-        async function handleUndoRoteirizacao() {
-            if (selectedDeliveries.size === 0) {
+        
+        async function handleUndoRoteirizacao(deliveryIds) {
+            if (deliveryIds.size === 0) {
                 addNotification("Nenhuma entrega selecionada para desfazer.", "error");
                 return;
             }
-            
-            const btn = document.getElementById('undo-roteirizar-btn');
-            btn.textContent = 'Processando...';
-            btn.disabled = true;
 
-            try {
-                await updateEstadoRota(selectedDeliveries, null);
-                addNotification(`${selectedDeliveries.size} roteirizações desfeitas com sucesso.`);
-                selectedDeliveries.clear();
-                renderDetails();
-            } catch (e) {
-                addNotification(`Erro ao desfazer roteirização: ${e.message}`, 'error');
-            } finally {
-                btn.textContent = 'Desfazer Roteirização';
-                btn.disabled = false;
-            }
+            const itemsToUndo = allLoadedData.filter(item => deliveryIds.has(item.CTRC_Identificador));
+            const affectedSchedules = new Set();
+            itemsToUndo.forEach(item => {
+                if(item.placa_rota && item.data_programacao) {
+                    affectedSchedules.add(`${item.placa_rota}-${item.data_programacao}`);
+                }
+            });
+
+            const updateData = { Estado_Rota: null, placa_rota: null, data_programacao: null };
+            await updateDatabase(deliveryIds, updateData);
+
+            // Update local schedule data
+            affectedSchedules.forEach(key => {
+                const schedule = scheduledData.get(key);
+                if (schedule) {
+                    schedule.items = schedule.items.filter(item => !deliveryIds.has(item.CTRC_Identificador));
+                    if (schedule.items.length === 0) {
+                        scheduledData.delete(key);
+                    }
+                }
+            });
+
+            addNotification(`${deliveryIds.size} roteirizações desfeitas com sucesso.`);
+            selectedDeliveries.clear();
+            renderDetails();
+            renderSchedule();
         }
 
         async function computeRouteWithFallback(waypoints, origin) {
@@ -1054,27 +967,36 @@
             }
             return null;
         }
+
         async function handleRoteirizar() {
             const btn = document.getElementById('roteirizar-btn-inner');
+            const vehiclePlate = document.getElementById('vehicle-plate').value.toUpperCase();
+            const dataProgramacao = document.getElementById('data-programacao').value;
+
+            if (!vehiclePlate || !dataProgramacao) {
+                addNotification("Por favor, preencha a Placa do Veículo e a Data de Programação.", "error");
+                return;
+            }
+            if (selectedDeliveries.size === 0) {
+                addNotification("Nenhuma entrega selecionada para roteirizar.", "error");
+                return;
+            }
+
             btn.textContent = 'Roteirizando...';
             btn.disabled = true;
 
-            const selectedOrigin = originSelect.value;
-            if (!selectedOrigin) {
-                addNotification("Por favor, selecione um ponto de origem.", "error");
-                btn.textContent = 'Roteirizar';
-                btn.disabled = false;
-                return;
-            }
-
-            if (selectedDeliveries.size === 0) {
-                addNotification("Nenhuma entrega selecionada para roteirizar.", "error");
-                btn.textContent = 'Roteirizar';
-                btn.disabled = false;
-                return;
-            }
-
             const dataToRoute = filteredData.filter(item => selectedDeliveries.has(item.CTRC_Identificador));
+            
+            const alreadyRouted = dataToRoute.filter(item => item.Estado_Rota === 'Roteirizado');
+            if (alreadyRouted.length > 0) {
+                const ctrcs = alreadyRouted.map(item => item.CTRC_Identificador).join(', ');
+                addNotification(`As seguintes entregas já estão roteirizadas e não podem ser incluídas novamente: ${ctrcs}. Desfaça a roteirização anterior para prosseguir.`, "error");
+                btn.textContent = 'Roteirizar';
+                btn.disabled = false;
+                return;
+            }
+
+            const selectedOrigin = originSelect.value;
             
             const addressMap = new Map();
             dataToRoute.forEach(d => {
@@ -1101,41 +1023,40 @@
             if (chunks.length > 1) addNotification(`Rota dividida em ${chunks.length} partes.`);
             let finalOrderedDeliveries = [];
             let finalOrderedWaypoints = [];
-            let totalDistance = 0;
-            let totalDuration = 0;
-            let globalOrderIndex = 1;
+            let totalDistance = 0, totalDuration = 0, globalOrderIndex = 1;
+
             for (const chunk of chunks) {
                 const apiResult = await computeRouteWithFallback(chunk, selectedOrigin);
                 if (apiResult && apiResult.result.routes) {
                     const route = apiResult.result.routes[0];
                     const optimizedOrderIndices = route.optimizedIntermediateWaypointIndex || [];
                     const orderedChunkWaypoints = optimizedOrderIndices.map(index => chunk[index]);
-
                     finalOrderedWaypoints.push(...orderedChunkWaypoints);
                     totalDistance += route.distanceMeters || 0;
                     totalDuration += parseInt(route.duration?.replace('s', '') || 0, 10);
-
-                    const legInfoMap = new Map();
-                    route.legs.forEach((leg, i) => {
-                        const destIndex = (i < optimizedOrderIndices.length) ? optimizedOrderIndices[i] : -1;
-                        if (destIndex !== -1) {
-                            const waypoint = chunk[destIndex];
-                            legInfoMap.set(waypoint.address, `Dist: ${(leg.distanceMeters / 1000).toFixed(1)}km, Duração: ${Math.round(parseInt(leg.duration.replace('s', ''))/60)}min`);
-                        }
-                    });
                     orderedChunkWaypoints.forEach(waypoint => {
                         waypoint.deliveries.forEach(delivery => {
-                            finalOrderedDeliveries.push({ ...delivery, ordem: globalOrderIndex, infoRota: legInfoMap.get(waypoint.address) || 'N/A' });
+                            finalOrderedDeliveries.push({ ...delivery, ordem: globalOrderIndex });
                         });
                         globalOrderIndex++;
                     });
                 } else {
                     addNotification(`Falha ao roteirizar o trecho: "${chunk[0].address}".`, "error");
-                    chunk.forEach(w => w.deliveries.forEach(d => finalOrderedDeliveries.push({ ...d, ordem: 999, infoRota: 'FALHA' })));
+                    chunk.forEach(w => w.deliveries.forEach(d => finalOrderedDeliveries.push({ ...d, ordem: 999 })));
                 }
             }
             
-            await updateEstadoRota(selectedDeliveries, 'Roteirizado');
+            const updateData = { Estado_Rota: 'Roteirizado', placa_rota: vehiclePlate, data_programacao: dataProgramacao };
+            await updateDatabase(selectedDeliveries, updateData);
+
+            finalOrderedDeliveries.forEach(item => {
+                const originalItem = allLoadedData.find(d => d.CTRC_Identificador === item.CTRC_Identificador);
+                if(originalItem) {
+                    Object.assign(originalItem, updateData, { ordem: item.ordem });
+                }
+                // Also update the item in the finalOrderedDeliveries array itself
+                Object.assign(item, updateData);
+            });
 
             orderedData = finalOrderedDeliveries.sort((a, b) => a.ordem - b.ordem);
             detailsSort.column = 'ordem';
@@ -1145,16 +1066,13 @@
             if (resultContainer) {
                 const addressesForUrl = [selectedOrigin, ...finalOrderedWaypoints.map(w => w.address), selectedOrigin];
                 currentMapsUrl = `https://www.google.com/maps/dir/${addressesForUrl.map(addr => encodeURIComponent(addr)).join('/')}`;
-                resultContainer.innerHTML = `
-                    <div class="p-4 bg-app-tertiary rounded-lg fade-in">
-                        <h3 class="text-xl font-bold">Resultado da Roteirização</h3>
-                        <p>Duração Total: <strong>${Math.round(totalDuration / 60)} min</strong> | Distância Total: <strong>${(totalDistance / 1000).toFixed(2)} km</strong></p>
-                        <a href="${currentMapsUrl}" target="_blank" class="text-blue-400 hover:underline font-bold">Ver Rota no Google Maps</a>
-                    </div>`;
+                resultContainer.innerHTML = `<div class="p-4 bg-app-tertiary rounded-lg fade-in"><h3 class="text-xl font-bold">Resultado da Roteirização</h3><p>Duração Total: <strong>${Math.round(totalDuration / 60)} min</strong> | Distância Total: <strong>${(totalDistance / 1000).toFixed(2)} km</strong></p><a href="${currentMapsUrl}" target="_blank" class="text-blue-400 hover:underline font-bold">Ver Rota no Google Maps</a></div>`;
             }
             
+            updateScheduleData(orderedData, vehiclePlate, dataProgramacao);
             renderDetails();
             renderExportButtons();
+            renderSchedule();
             btn.textContent = 'Roteirizar';
             btn.disabled = false;
         }
@@ -1162,105 +1080,61 @@
         function renderExportButtons() {
             const container = document.getElementById('export-buttons');
             if (!container) return;
-            container.innerHTML = `
-                <button id="export-xlsx" class="bg-green-700 hover:bg-green-600 text-white rounded-lg px-4 py-2 transition">Exportar Romaneio (XLSX)</button>
-                <button id="export-pdf" class="bg-red-700 hover:bg-red-600 text-white rounded-lg px-4 py-2 transition">Exportar Romaneio (PDF)</button>
-            `;
-            document.getElementById('export-xlsx').addEventListener('click', exportToXLSX);
-            document.getElementById('export-pdf').addEventListener('click', exportToPDF);
+            container.innerHTML = `<button id="export-xlsx" class="bg-green-700 hover:bg-green-600 text-white rounded-lg px-4 py-2 transition">Exportar Romaneio (XLSX)</button><button id="export-pdf" class="bg-red-700 hover:bg-red-600 text-white rounded-lg px-4 py-2 transition">Exportar Romaneio (PDF)</button>`;
+            document.getElementById('export-xlsx').addEventListener('click', () => exportHandler('xlsx'));
+            document.getElementById('export-pdf').addEventListener('click', () => exportHandler('pdf'));
         }
 
-        function getRomaneioData() {
-            const vehiclePlate = document.getElementById('vehicle-plate').value.toUpperCase();
-            const originKey = Object.keys(ORIGINS).find(key => ORIGINS[key] === originSelect.value);
-            const originDetails = ORIGIN_DETAILS[originKey];
-            const today = new Date().toLocaleDateString('pt-BR');
+        function exportHandler(format, scheduleKey = null) {
+            let itemsToExport, plate, date;
+            if (scheduleKey) {
+                const schedule = scheduledData.get(scheduleKey);
+                itemsToExport = schedule.items;
+                plate = schedule.info.placa_rota;
+                date = schedule.info.data_programacao;
+            } else {
+                itemsToExport = orderedData;
+                plate = document.getElementById('vehicle-plate').value.toUpperCase();
+                date = document.getElementById('data-programacao').value;
+            }
+            if (!itemsToExport || itemsToExport.length === 0) {
+                addNotification("Nenhum dado para exportar.", "error");
+                return;
+            }
+            const romaneioInfo = { vehiclePlate: plate, date: new Date(date + 'T00:00:00').toLocaleDateString('pt-BR'), originKey: Object.keys(ORIGINS).find(key => ORIGINS[key] === originSelect.value) };
+            if (format === 'xlsx') exportToXLSX(itemsToExport, romaneioInfo);
+            else if (format === 'pdf') exportToPDF(itemsToExport, romaneioInfo);
+        }
 
+        function getRomaneioData(items, info) {
+            const originDetails = ORIGIN_DETAILS[info.originKey];
             const tableHeaders = ['Ordem', 'CTRC', 'Situação', 'Operação', 'Remetente', 'Recebedor', 'Cidade', 'Bairro', 'Vol', 'NF', 'Frete', 'Peso'];
-            const tableBody = orderedData.map(row => [
-                row.ordem,
-                row.CTRC_Identificador,
-                row.situacao_resumida,
-                row.Tipo_Operação,
-                row.Remetente_Nome,
-                row.Entrega_Nome,
-                row.Destino_Cidade,
-                row.Entrega_Bairro,
-                row.Quantidade_Volumes,
-                (Number(row.Valor_Nota_Fiscal_RRS) || 0),
-                (Number(row.Valor_Frete_RRS) || 0),
-                (Number(row.Peso_Cálculo_Kg) || 0)
+            const tableBody = items.map(row => [
+                row.ordem || '-', row.CTRC_Identificador, row.situacao_resumida, row.Tipo_Operação,
+                row.Remetente_Nome, row.Entrega_Nome, row.Destino_Cidade, row.Entrega_Bairro,
+                row.Quantidade_Volumes, (Number(row.Valor_Nota_Fiscal_RRS) || 0),
+                (Number(row.Valor_Frete_RRS) || 0), (Number(row.Peso_Cálculo_Kg) || 0)
             ]);
-
-            // Calcular Totais
-            const totals = {
-                vol: tableBody.reduce((sum, row) => sum + Number(row[8]), 0),
-                nf: tableBody.reduce((sum, row) => sum + Number(row[9]), 0),
-                frete: tableBody.reduce((sum, row) => sum + Number(row[10]), 0),
-                peso: tableBody.reduce((sum, row) => sum + Number(row[11]), 0)
-            };
-
-            const footer = [
-                { content: 'TOTAIS', colSpan: 8, styles: { halign: 'right', fontStyle: 'bold' } },
-                { content: totals.vol, styles: { fontStyle: 'bold' } },
-                { content: `R$ ${totals.nf.toFixed(2)}`, styles: { fontStyle: 'bold' } },
-                { content: `R$ ${totals.frete.toFixed(2)}`, styles: { fontStyle: 'bold' } },
-                { content: `${totals.peso.toFixed(2)} Kg`, styles: { fontStyle: 'bold' } },
-            ];
-            
-            // Formatar body para string depois de calcular
-            const formattedBody = tableBody.map(row => [
-                ...row.slice(0, 9),
-                `R$ ${row[9].toFixed(2)}`,
-                `R$ ${row[10].toFixed(2)}`,
-                `${row[11].toFixed(2)} Kg`
-            ]);
-
-
-            return { tableHeaders, tableBody: formattedBody, footer, totals, vehiclePlate, originDetails, today };
+            const totals = { vol: tableBody.reduce((sum, row) => sum + Number(row[8]), 0), nf: tableBody.reduce((sum, row) => sum + Number(row[9]), 0), frete: tableBody.reduce((sum, row) => sum + Number(row[10]), 0), peso: tableBody.reduce((sum, row) => sum + Number(row[11]), 0) };
+            const footer = [ { content: 'TOTAIS', colSpan: 8, styles: { halign: 'right', fontStyle: 'bold' } }, { content: totals.vol, styles: { fontStyle: 'bold' } }, { content: `R$ ${totals.nf.toFixed(2)}`, styles: { fontStyle: 'bold' } }, { content: `R$ ${totals.frete.toFixed(2)}`, styles: { fontStyle: 'bold' } }, { content: `${totals.peso.toFixed(2)} Kg`, styles: { fontStyle: 'bold' } }, ];
+            const formattedBody = tableBody.map(row => [ ...row.slice(0, 9), `R$ ${row[9].toFixed(2)}`, `R$ ${row[10].toFixed(2)}`, `${row[11].toFixed(2)} Kg` ]);
+            return { tableHeaders, tableBody: formattedBody, footer, totals, vehiclePlate: info.vehiclePlate, originDetails, today: info.date };
         }
 
-        function exportToXLSX() {
-            const { tableHeaders, tableBody, totals, vehiclePlate, originDetails, today } = getRomaneioData();
-            
-            const headerXLSX = [
-                ["Romaneio de Carga"],
-                [`Data: ${today}`, `Placa do veículo: ${vehiclePlate}`],
-                [`Filial: ${originDetails.name}`],
-                [`Endereço: ${originDetails.address}`],
-                [`Telefone: ${originDetails.phones.join(' / ')}`],
-                []
-            ];
-
-            const footerXLSX = [
-                "", "", "", "", "", "", "", "TOTAIS",
-                totals.vol,
-                `R$ ${totals.nf.toFixed(2)}`,
-                `R$ ${totals.frete.toFixed(2)}`,
-                `${totals.peso.toFixed(2)} Kg`
-            ];
-
+        function exportToXLSX(items, info) {
+            const { tableHeaders, tableBody, totals, vehiclePlate, originDetails, today } = getRomaneioData(items, info);
+            const headerXLSX = [ ["Romaneio de Carga"], [`Data: ${today}`, `Placa do veículo: ${vehiclePlate}`], [`Filial: ${originDetails.name}`], [`Endereço: ${originDetails.address}`], [`Telefone: ${originDetails.phones.join(' / ')}`], [] ];
+            const footerXLSX = [ "", "", "", "", "", "", "", "TOTAIS", totals.vol, `R$ ${totals.nf.toFixed(2)}`, `R$ ${totals.frete.toFixed(2)}`, `${totals.peso.toFixed(2)} Kg` ];
             const wb = XLSX.utils.book_new();
-            const ws_data = [
-                ...headerXLSX,
-                tableHeaders,
-                ...tableBody,
-                [],
-                footerXLSX
-            ];
+            const ws_data = [ ...headerXLSX, tableHeaders, ...tableBody, [], footerXLSX ];
             const ws = XLSX.utils.aoa_to_sheet(ws_data);
-            
-            ws['!cols'] = [
-                { wch: 5 }, { wch: 15 }, { wch: 15 }, { wch: 10 }, { wch: 30 }, { wch: 30 }, 
-                { wch: 20 }, { wch: 20 }, { wch: 5 }, { wch: 15 }, { wch: 15 }, { wch: 15 }
-            ];
-
+            ws['!cols'] = [ { wch: 5 }, { wch: 15 }, { wch: 15 }, { wch: 10 }, { wch: 30 }, { wch: 30 }, { wch: 20 }, { wch: 20 }, { wch: 5 }, { wch: 15 }, { wch: 15 }, { wch: 15 } ];
             XLSX.utils.book_append_sheet(wb, ws, "Romaneio");
             XLSX.writeFile(wb, `Romaneio_${vehiclePlate || 'sem_placa'}.xlsx`);
         }
 
-        function exportToPDF() {
-            const { tableHeaders, tableBody, footer, vehiclePlate, originDetails, today } = getRomaneioData();
+        function exportToPDF(items, info) {
+            const { tableHeaders, tableBody, footer, vehiclePlate, originDetails, today } = getRomaneioData(items, info);
             const { jsPDF } = window.jspdf;
             const doc = new jsPDF({ orientation: 'landscape' });
             
@@ -1268,27 +1142,19 @@
                 didDrawPage: function (data) {
                     const pageRightX = doc.internal.pageSize.getWidth() - 15;
                     let currentY = 15;
-
                     doc.setFontSize(14);
                     doc.text("Romaneio de Carga", 15, currentY);
-                    
-                    // QR Code
                     if (currentMapsUrl) {
                         try {
                             const qr = qrcode(0, 'L');
                             qr.addData(currentMapsUrl);
                             qr.make();
-                            const qrImgData = qr.createDataURL(4);
-                            doc.addImage(qrImgData, 'PNG', pageRightX - 30, 10, 30, 30);
-                        } catch(e) {
-                            console.error("Erro ao gerar QR Code:", e);
-                        }
+                            doc.addImage(qr.createDataURL(4), 'PNG', pageRightX - 30, 10, 30, 30);
+                        } catch(e) { console.error("Erro ao gerar QR Code:", e); }
                     }
-
                     currentY += 8;
                     doc.setFontSize(10);
                     doc.text(`Data: ${today} / Placa do veículo: ${vehiclePlate}`, 15, currentY);
-                    
                     currentY += 5;
                     doc.setFontSize(8);
                     doc.text(`Filial: ${originDetails.name}`, 15, currentY);
@@ -1297,36 +1163,266 @@
                     currentY += 4;
                     doc.text(`Telefone: ${originDetails.phones.join(' / ')}`, 15, currentY);
                 },
-                startY: 50, 
-                head: [tableHeaders],
-                body: tableBody,
-                foot: [footer],
-                showFoot: 'lastPage',
-                theme: 'grid',
-                styles: { fontSize: 7, cellPadding: 1.5 },
+                startY: 50, head: [tableHeaders], body: tableBody, foot: [footer],
+                showFoot: 'lastPage', theme: 'grid', styles: { fontSize: 7, cellPadding: 1.5 },
                 headStyles: { fillColor: [55, 65, 81], fontStyle: 'bold' },
                 footStyles: { fillColor: [55, 65, 81], textColor: [255, 255, 255] }
             });
-
             doc.save(`Romaneio_${vehiclePlate || 'sem_placa'}.pdf`);
         }
 
+        // --- LÓGICA DO CRONOGRAMA (COM ACORDEÃO E EDIÇÃO INLINE) ---
+        function initializeSchedule() {
+            scheduledData.clear();
+            const routedItems = allLoadedData.filter(item => item.Estado_Rota === 'Roteirizado' && item.placa_rota && item.data_programacao);
+            routedItems.forEach(item => {
+                const key = `${item.placa_rota}-${item.data_programacao}`;
+                if (!scheduledData.has(key)) {
+                    scheduledData.set(key, {
+                        info: { placa_rota: item.placa_rota, data_programacao: item.data_programacao },
+                        items: []
+                    });
+                }
+                scheduledData.get(key).items.push(item);
+            });
+            renderSchedule();
+        }
+
+        function updateScheduleData(routedItems, placa, data) {
+            const key = `${placa}-${data}`;
+            if (!scheduledData.has(key)) {
+                scheduledData.set(key, { info: { placa_rota: placa, data_programacao: data }, items: [] });
+            }
+            const schedule = scheduledData.get(key);
+            routedItems.forEach(newItem => {
+                if (!schedule.items.some(existing => existing.CTRC_Identificador === newItem.CTRC_Identificador)) {
+                    schedule.items.push(newItem);
+                }
+            });
+        }
+
+        function generateMapsUrl(scheduleItems, originAddress) {
+            if (!scheduleItems || scheduleItems.length === 0 || !originAddress) return '';
+            
+            const uniqueWaypoints = [...new Map(scheduleItems.map(item => {
+                const fullAddress = `${item.Destino_Cidade}, ${item.Entrega_Bairro}, ${item.Destino_UF}`;
+                return [fullAddress, fullAddress];
+            })).values()];
+
+            const addressesForUrl = [originAddress, ...uniqueWaypoints, originAddress];
+            return `https://www.google.com/maps/dir/${addressesForUrl.map(addr => encodeURIComponent(addr)).join('/')}`;
+        }
+
+        function renderSchedule() {
+            if (scheduledData.size === 0) {
+                scheduleSection.innerHTML = '<div class="bg-app-secondary p-4 rounded-lg h-full flex items-center justify-center"><p class="text-center">Nenhum carregamento programado.</p></div>';
+                return;
+            }
+
+            const schedules = Array.from(scheduledData.values()).sort((a,b) => new Date(b.info.data_programacao) - new Date(a.info.data_programacao));
+
+            const headers = ['Data Prog.', 'Placa', 'Rotas', 'Entregas', 'Volumes', 'Peso', 'Valor NF', 'Valor Frete', 'Ações'];
+            const headHTML = `<thead><tr>${headers.map(h => `<th class="p-2">${h}</th>`).join('')}</tr></thead>`;
+
+            const bodyHTML = schedules.map(schedule => {
+                const key = `${schedule.info.placa_rota}-${schedule.info.data_programacao}`;
+                const totals = schedule.items.reduce((acc, item) => {
+                    acc.volumes += Number(item.Quantidade_Volumes) || 0;
+                    acc.peso += Number(item.Peso_Cálculo_Kg) || 0;
+                    acc.nf += Number(item.Valor_Nota_Fiscal_RRS) || 0;
+                    acc.frete += Number(item.Valor_Frete_RRS) || 0;
+                    return acc;
+                }, { volumes: 0, peso: 0, nf: 0, frete: 0 });
+                const routes = [...new Set(schedule.items.map(i => i.rotaNormalizada))].join(', ');
+                const date = new Date(schedule.info.data_programacao + 'T00:00:00').toLocaleDateString('pt-BR');
+                const mapsUrl = generateMapsUrl(schedule.items, originSelect.value);
+
+                const summaryRowHTML = `
+                    <tr class="border-t border-app schedule-summary-row cursor-pointer" data-key="${key}">
+                        <td class="col-align-center" data-field="data_programacao">${date}</td>
+                        <td class="col-align-center font-bold" data-field="placa_rota">${schedule.info.placa_rota}</td>
+                        <td title="${routes}">${routes}</td>
+                        <td class="col-align-center">${schedule.items.length}</td>
+                        <td class="col-align-center">${totals.volumes}</td>
+                        <td class="col-align-right">${totals.peso.toFixed(2)} Kg</td>
+                        <td class="col-align-right">R$ ${totals.nf.toFixed(2)}</td>
+                        <td class="col-align-right">R$ ${totals.frete.toFixed(2)}</td>
+                        <td class="col-align-center" data-field="actions">
+                            <div class="flex justify-center items-center gap-3">
+                                <a href="${mapsUrl}" target="_blank" title="Ver Rota no Google Maps"><svg xmlns="http://www.w3.org/2000/svg" class="action-icon text-cyan-400 h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2h1a2 2 0 002-2v-1a2 2 0 012-2h1.945M7.881 4.002l.07-.07a2 2 0 012.828 0l.07.07M15.97 4.002l.07-.07a2 2 0 00-2.828 0l-.07.07m-2.064 14.004l.07.07a2 2 0 002.828 0l.07-.07M4.002 11.881l-.07.07a2 2 0 000 2.828l.07.07m14.004-2.965l-.07.07a2 2 0 01-2.828 0l-.07-.07M12 21a9 9 0 100-18 9 9 0 000 18z" /></svg></a>
+                                <svg class="action-icon text-green-500 h-6 w-6" data-format="xlsx" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" title="Exportar para Excel"><path d="M14 2H6C4.9 2 4 2.9 4 4V20C4 21.1 4.9 22 6 22H18C19.1 22 20 21.1 20 20V8L14 2ZM11.85 16.5H10.5V18H9.5V16.5H8.15L10 14.2L11.85 16.5ZM11 10H13V12H11V10ZM11 13H13V15H11V13ZM15 12H17V15H15V12ZM15 10H17V11H15V10Z"/></svg>
+                                <svg class="action-icon text-red-500 h-6 w-6" data-format="pdf" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" title="Exportar para PDF"><path d="M14 2H6C4.9 2 4 2.9 4 4V20C4 21.1 4.9 22 6 22H18C19.1 22 20 21.1 20 20V8L14 2ZM9 12H12V14H9V12ZM12 18H15V19H12V18ZM12 16H15V17H12V16ZM9 15H12V17H9V15Z"/></svg>
+                                <svg class="action-icon text-blue-400 h-6 w-6" data-action="edit" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" title="Editar"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.5L15.232 5.232z" /></svg>
+                                <svg class="action-icon text-yellow-500 h-6 w-6" data-action="undo" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" title="Desfazer Roteirização"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2M3 10h10a8 8 0 018 8v2M3 10l4-4m0 0l4 4" /></svg>
+                            </div>
+                        </td>
+                    </tr>`;
+
+                const detailHeadersConfig = [
+                    { key: 'ordem', label: 'Ordem', tdClass: 'col-align-center' }, { key: 'CTRC_Identificador', label: 'CTRC' }, { key: 'situacao_resumida', label: 'Situação' },
+                    { key: 'Tipo_Operação', label: 'Operação' }, { key: 'Remetente_Nome', label: 'Remetente' }, { key: 'Entrega_Nome', label: 'Recebedor' }, 
+                    { key: 'Destino_Cidade', label: 'Cidade' }, { key: 'Entrega_Bairro', label: 'Bairro' }, { key: 'Quantidade_Volumes', label: 'Vol', tdClass: 'col-align-center'}, 
+                    { key: 'Valor_Nota_Fiscal_RRS', label: 'NF', tdClass: 'col-align-right' }, { key: 'Valor_Frete_RRS', label: 'Frete', tdClass: 'col-align-right' }, 
+                    { key: 'Peso_Cálculo_Kg', label: 'Peso', tdClass: 'col-align-right' }
+                ];
+                const detailHead = `<thead><tr class="bg-app-tertiary">${detailHeadersConfig.map(h => `<th>${h.label}</th>`).join('')}</tr></thead>`;
+                const detailBody = schedule.items
+                    .sort((a, b) => (a.ordem || 999) - (b.ordem || 999))
+                    .map(row => {
+                        const cells = detailHeadersConfig.map(col => {
+                            let content = row[col.key] === null || row[col.key] === undefined ? '' : row[col.key];
+                            let title = String(content);
+                            switch(col.key) {
+                                case 'Valor_Nota_Fiscal_RRS': case 'Valor_Frete_RRS': 
+                                    content = `R$ ${(Number(content) || 0).toFixed(2)}`; 
+                                    break;
+                                case 'Peso_Cálculo_Kg': 
+                                    content = `${(Number(content) || 0).toFixed(2)} Kg`; 
+                                    break;
+                            }
+                            return `<td class="${col.tdClass || ''}" title="${title}">${content}</td>`;
+                        }).join('');
+                        return `<tr class="border-t border-app">${cells}</tr>`;
+                    }).join('');
+                
+                const detailTable = `<table class="w-full text-sm">${detailHead}<tbody>${detailBody}</tbody></table>`;
+                const detailRowHTML = `<tr class="schedule-detail-row hidden" data-detail-key="${key}"><td colspan="${headers.length}" class="p-0"><div class="p-4">${detailTable}</div></td></tr>`;
+
+                return summaryRowHTML + detailRowHTML;
+            }).join('');
+
+            scheduleSection.innerHTML = `<div class="bg-app-secondary p-4 rounded-lg h-full flex flex-col"><div id="schedule-content" class="overflow-auto flex-grow"><table class="w-full">${headHTML}<tbody>${bodyHTML}</tbody></table></div></div>`;
+            
+            document.querySelectorAll('.schedule-summary-row').forEach(row => {
+                row.addEventListener('click', (e) => {
+                    if (e.target.closest('.action-icon') || e.target.closest('input') || e.target.closest('a')) return;
+                    const key = row.dataset.key;
+                    const detailRow = document.querySelector(`.schedule-detail-row[data-detail-key="${key}"]`);
+                    if (detailRow) {
+                       detailRow.classList.toggle('hidden');
+                    }
+                });
+            });
+            document.querySelectorAll('.action-icon').forEach(icon => icon.addEventListener('click', handleScheduleAction));
+        }
+
+        function handleScheduleAction(e) {
+            e.stopPropagation();
+            const icon = e.currentTarget;
+            const action = icon.dataset.action || icon.dataset.format;
+            const key = icon.closest('tr').dataset.key;
+
+            switch (action) {
+                case 'edit':
+                    toggleEditMode(key, true);
+                    break;
+                case 'save':
+                    handleSaveScheduleChange(key);
+                    break;
+                case 'cancel':
+                    toggleEditMode(key, false);
+                    break;
+                case 'undo':
+                    const schedule = scheduledData.get(key);
+                    if (schedule) {
+                        const idsToUndo = new Set(schedule.items.map(item => item.CTRC_Identificador));
+                        handleUndoRoteirizacao(idsToUndo);
+                    }
+                    break;
+                case 'xlsx':
+                case 'pdf':
+                    exportHandler(action, key);
+                    break;
+            }
+        }
+
+        function toggleEditMode(key, isEditing) {
+            const row = document.querySelector(`.schedule-summary-row[data-key="${key}"]`);
+            if (!row) return;
+
+            const schedule = scheduledData.get(key);
+            const dateCell = row.querySelector('td[data-field="data_programacao"]');
+            const plateCell = row.querySelector('td[data-field="placa_rota"]');
+            const actionsCell = row.querySelector('td[data-field="actions"]');
+
+            if (isEditing) {
+                row.classList.add('editing');
+                row.dataset.originalDate = schedule.info.data_programacao;
+                row.dataset.originalPlate = schedule.info.placa_rota;
+
+                dateCell.innerHTML = `<input type="date" class="w-full p-1 rounded-lg bg-app-tertiary border-app" value="${schedule.info.data_programacao}">`;
+                plateCell.innerHTML = `<input type="text" class="w-full p-1 rounded-lg bg-app-tertiary border-app" value="${schedule.info.placa_rota}">`;
+                actionsCell.innerHTML = `
+                    <div class="flex justify-center items-center gap-3">
+                        <svg class="action-icon text-green-400 h-7 w-7" data-action="save" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" title="Salvar"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg>
+                        <svg class="action-icon text-red-400 h-7 w-7" data-action="cancel" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" title="Cancelar"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
+                    </div>`;
+            } else {
+                renderSchedule(); // Re-render to restore icons and listeners cleanly
+            }
+            actionsCell.querySelectorAll('.action-icon').forEach(icon => icon.addEventListener('click', handleScheduleAction));
+        }
+
+        async function handleSaveScheduleChange(oldKey) {
+            const row = document.querySelector(`.schedule-summary-row[data-key="${oldKey}"]`);
+            if (!row) return;
+
+            const newPlateInput = row.querySelector('td[data-field="placa_rota"] input');
+            const newDateInput = row.querySelector('td[data-field="data_programacao"] input');
+            const newPlate = newPlateInput.value.toUpperCase();
+            const newDate = newDateInput.value;
+
+            if (!newPlate || !newDate) {
+                addNotification("Placa e Data são obrigatórios.", "error");
+                return;
+            }
+
+            const schedule = scheduledData.get(oldKey);
+            if (!schedule) return;
+
+            const newKey = `${newPlate}-${newDate}`;
+            if (newKey !== oldKey && scheduledData.has(newKey)) {
+                addNotification(`Já existe um carregamento para a placa ${newPlate} na data ${new Date(newDate + 'T00:00:00').toLocaleDateString('pt-BR')}.`, "error");
+                return;
+            }
+
+            const idsToUpdate = new Set(schedule.items.map(item => item.CTRC_Identificador));
+            const updateData = { placa_rota: newPlate, data_programacao: newDate };
+            await updateDatabase(idsToUpdate, updateData);
+
+            scheduledData.delete(oldKey);
+            schedule.info.placa_rota = newPlate;
+            schedule.info.data_programacao = newDate;
+            scheduledData.set(newKey, schedule);
+
+            addNotification("Carregamento atualizado com sucesso.");
+            renderSchedule();
+        }
+
         function switchTab(tabName) {
+            summaryTabBtn.classList.remove('active');
+            detailsTabBtn.classList.remove('active');
+            scheduleTabBtn.classList.remove('active');
+            summarySection.classList.remove('active');
+            detailsSection.classList.remove('active');
+            scheduleSection.classList.remove('active');
+
             if (tabName === 'summary') {
                 summaryTabBtn.classList.add('active');
-                detailsTabBtn.classList.remove('active');
                 summarySection.classList.add('active');
-                detailsSection.classList.remove('active');
-            } else {
-                summaryTabBtn.classList.remove('active');
+            } else if (tabName === 'details') {
                 detailsTabBtn.classList.add('active');
-                summarySection.classList.remove('active');
                 detailsSection.classList.add('active');
+            } else if (tabName === 'schedule') {
+                scheduleTabBtn.classList.add('active');
+                scheduleSection.classList.add('active');
             }
         }
 
         // --- INICIALIZAÇÃO ---
-        function initializeApp() {
+        async function initializeApp() {
+            headerLoader.classList.remove('hidden');
+            addNotification("Carregando dados iniciais...");
             const savedTheme = localStorage.getItem('theme') || 'dark';
             applyTheme(savedTheme);
             
@@ -1345,8 +1441,18 @@
             filterBtn.addEventListener('click', handleFilter);
             summaryTabBtn.addEventListener('click', () => switchTab('summary'));
             detailsTabBtn.addEventListener('click', () => switchTab('details'));
+            scheduleTabBtn.addEventListener('click', () => switchTab('schedule'));
             
-            populateFilters();
+            try {
+                await fetchAllDataOnce();
+                addNotification("Dados carregados. Populando filtros...");
+                populateFilters();
+                initializeSchedule();
+            } catch(e) {
+                addNotification(`Erro fatal na inicialização: ${e.message}`, 'error');
+            } finally {
+                headerLoader.classList.add('hidden');
+            }
         }
 
         initializeApp();
